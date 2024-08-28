@@ -1,9 +1,9 @@
+#include <fcntl.h>
 #include <readline/history.h>
 #include <readline/readline.h>
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
-#include <fcntl.h>
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -22,28 +22,42 @@ int shell_term;
 int shell_focused;
 pid_t shell_pgid;
 
-int parse_user_input(char *user_str)
+int parse_user_input(char *user_str, int* num_tok_before_pipe)
 {
     char *token;
 
     token = strtok(user_str, " ");
 
     int i = 0;
+    int pipe_found = 0;
     while (token != 0)
     {
+        if(!strcmp(token, "|"))
+        {
+            pipe_found = 1;
+            (*num_tok_before_pipe)++;
+        }
+        if(strcmp(token, "|") && !pipe_found)
+        {
+            (*num_tok_before_pipe)++;
+        }
+
         strncpy(TOKENS[i], token, MAX_TOKEN_SIZE);
         token = strtok(0, " ");
         i++;
     }
 
-#ifdef DEBUG
-    for (int j = 0; j < MAX_INPUT_SIZE; j++)
+    if(!pipe_found)
     {
-        if (strcmp(TOKENS[j], ""))
-            printf("%s\n", TOKENS[j]);
+        *num_tok_before_pipe = 0;
     }
-#endif
+
     return 0;
+}
+
+void InterruptHandler()
+{
+    printf("\n");
 }
 
 void init_shell()
@@ -52,86 +66,186 @@ void init_shell()
     shell_focused = isatty(shell_term);
     shell_pgid = getpgrp();
 
-    if(shell_focused)
+    if (shell_focused)
     {
-        while(tcgetpgrp(shell_term) != shell_pgid)
+        while (tcgetpgrp(shell_term) != shell_pgid)
         {
             kill(-shell_pgid, SIGTTIN);
             shell_pgid = getpgrp();
         }
-        
-        signal (SIGINT, SIG_IGN);
-        signal (SIGQUIT, SIG_IGN);
-        signal (SIGTSTP, SIG_IGN);
-        signal (SIGTTIN, SIG_IGN);
-        signal (SIGTTOU, SIG_IGN);
-        signal (SIGCHLD, SIG_IGN);
+
+        signal(SIGINT, InterruptHandler);
+        signal(SIGQUIT, SIG_IGN);
+        signal(SIGTSTP, SIG_IGN);
+        signal(SIGTTIN, SIG_IGN);
+        signal(SIGTTOU, SIG_IGN);
+        signal(SIGCHLD, SIG_IGN);
 
         shell_pgid = getpid();
-        
-        if(setpgid(shell_pgid, shell_pgid) < 0)
+
+        if (setpgid(shell_pgid, shell_pgid) < 0)
         {
-            perror("Couldn't put shell in its own process group");
+            perror("YASH: Couldn't put shell in its own process group");
             exit(1);
         }
 
         tcsetpgrp(shell_term, shell_pgid);
-
     }
 }
 
 void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
 {
-    if(shell_focused)
+    if (shell_focused)
     {
         pid_t pid = getpid();
-        if(pgid == 0) pgid = pid;
+        if (pgid == 0)
+            pgid = pid;
         setpgid(pid, pgid);
 
-        if(fg)
+        if (fg)
         {
             tcsetpgrp(shell_term, pgid);
         }
 
-        signal (SIGINT, SIG_DFL);
-        signal (SIGQUIT, SIG_DFL);
-        signal (SIGTSTP, SIG_DFL);
-        signal (SIGTTIN, SIG_DFL);
-        signal (SIGTTOU, SIG_DFL);
-        signal (SIGCHLD, SIG_DFL);
+        signal(SIGINT, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+        signal(SIGTSTP, SIG_DFL);
+        signal(SIGTTIN, SIG_DFL);
+        signal(SIGTTOU, SIG_DFL);
+        signal(SIGCHLD, SIG_DFL);
     }
-    
+
     if (infile != STDIN_FILENO)
     {
-        dup2 (infile, STDIN_FILENO);
-        close (infile);
+        dup2(infile, STDIN_FILENO);
+        close(infile);
     }
     if (outfile != STDOUT_FILENO)
     {
-        dup2 (outfile, STDOUT_FILENO);
-        close (outfile);
+        dup2(outfile, STDOUT_FILENO);
+        close(outfile);
     }
     if (errfile != STDERR_FILENO)
     {
-        dup2 (errfile, STDERR_FILENO);
-        close (errfile);
+        dup2(errfile, STDERR_FILENO);
+        close(errfile);
     }
 
     execvp(argv[0], argv);
-    perror("Failed to execute process");
+    perror("YASH: Failed to execute process");
     exit(1);
+}
+
+int evaluate_command_tokens(int start_global_tokens_index, int stop_global_tokens_index, int num_tok, int *psaved_stdin,
+                            int *psaved_stdout, int *psaved_stderr, char **prog_argv, int *pprog_argc)
+{
+    int user_input_valid = 1;
+    for (int j = start_global_tokens_index; j < stop_global_tokens_index; j++)
+    {
+
+        if (!strcmp(TOKENS[j], "<"))
+        {
+            // this check is separate and before the other to ensure no out of bounds access.
+            if (j + 1 == num_tok)
+            {
+                printf("YASH: Missing filename for \"<\"\n");
+                user_input_valid = 0;
+                break;
+            }
+            if (TOKENS[j + 1] != NULL)
+            {
+                if (access(TOKENS[j + 1], F_OK) == 0)
+                {
+                    *psaved_stdin = open(TOKENS[j + 1], O_RDWR, 0666);
+                    j++; // skip next token, we already know it should be the filename
+                }
+                else
+                {
+                    printf("YASH: STDIN file \"%s\" does not exist\n", TOKENS[j + 1]);
+                    user_input_valid = 0;
+                    break;
+                }
+            }
+            else
+            {
+                printf("YASH: Missing filename for \"<\"\n");
+                user_input_valid = 0;
+                break;
+            }
+        }
+        else if (!strcmp(TOKENS[j], ">"))
+        {
+            // this check is separate and before the other to ensure no out of bounds access.
+            if (j + 1 == num_tok)
+            {
+                printf("YASH: Missing filename for \">\"\n");
+                user_input_valid = 0;
+                break;
+            }
+            if (TOKENS[j + 1] != NULL)
+            {
+                *psaved_stdout = open(TOKENS[j + 1], O_RDWR | O_CREAT, 0666);
+                j++; // skip next token, we already know it should be the filename
+            }
+            else
+            {
+                printf("YASH: Missing filename for \">\"\n");
+                user_input_valid = 0;
+                break;
+            }
+        }
+        else if (!strcmp(TOKENS[j], "2>"))
+        {
+            // this check is separate and before the other to ensure no out of bounds access.
+            if (j + 1 == num_tok)
+            {
+                printf("YASH: Missing filename for \"2>\"\n");
+                user_input_valid = 0;
+                break;
+            }
+            if (TOKENS[j + 1] != NULL)
+            {
+                *psaved_stderr = open(TOKENS[j + 1], O_RDWR | O_CREAT, 0666);
+                j++; // skip next token, we already know it should be the filename
+            }
+            else
+            {
+                printf("YASH: Missing filename for \"2>\"\n");
+                user_input_valid = 0;
+                break;
+            }
+        }
+        else if (!strcmp(TOKENS[j], "&"))
+        {
+            /* code */
+        }
+        else
+        {
+            prog_argv[*pprog_argc] = TOKENS[j];
+            (*pprog_argc)++;
+        }
+    }
+    return user_input_valid;
 }
 
 int main(int argc, char **argv)
 {
-
     char *user_str;
+    shell_term = STDIN_FILENO;
+    shell_pgid = getpgrp();
+
+    signal(SIGINT, InterruptHandler);
+    signal(SIGTSTP, SIG_IGN);
 
     for (;;)
     {
-        int saved_stdin = STDIN_FILENO;
-        int saved_stdout = STDOUT_FILENO;
-        int saved_stderr = STDERR_FILENO;
+        int jsaved_stdin = STDIN_FILENO;
+        int jsaved_stdout = STDOUT_FILENO;
+        int jsaved_stderr = STDERR_FILENO;
+
+        int ksaved_stdin = STDIN_FILENO;
+        int ksaved_stdout = STDOUT_FILENO;
+        int ksaved_stderr = STDERR_FILENO;
 
         int my_pipe[2] = {0};
 
@@ -147,16 +261,8 @@ int main(int argc, char **argv)
 
         int status;
         user_str = readline("# ");
-        parse_user_input(user_str);
-
         int num_tok_before_pipe = 0;
-        if (strstr(user_str, "|"))
-        {
-            while (strcmp(TOKENS[num_tok_before_pipe], "|"))
-            {
-                num_tok_before_pipe++;
-            }
-        }
+        parse_user_input(user_str, &num_tok_before_pipe);
 
         free(user_str);
 
@@ -166,182 +272,74 @@ int main(int argc, char **argv)
             num_tok++;
         }
 
-        for (int j = num_tok_before_pipe; j < num_tok; j++)
-        {
+        int user_input_valid = evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin,
+                                                       &jsaved_stdout, &jsaved_stderr, jprog_argv, &jprog_argc);
 
-            if (!strcmp(TOKENS[j], "<"))
-            {
-                // this check is separate and before the other to ensure no out of bounds access.
-                if (j + 1 == num_tok)
-                {
-                    printf("Missing filename for \"<\"\n");
-                    break;
-                }
-                if (TOKENS[j + 1] != NULL)
-                {
-                    saved_stdin = open(TOKENS[j + 1], O_RDWR|O_CREAT, 0666);
-                    j++; // skip next token, we already know it should be the filename
-                }
-                else
-                {
-                    printf("Missing filename for \"<\"\n");
-                }
-            }
-            else if (!strcmp(TOKENS[j], ">"))
-            {
-                // this check is separate and before the other to ensure no out of bounds access.
-                if (j + 1 == num_tok)
-                {
-                    printf("Missing filename for \">\"\n");
-                    break;
-                }
-                if (TOKENS[j + 1] != NULL)
-                {
-                    saved_stdout = open(TOKENS[j + 1], O_RDWR|O_CREAT, 0666);
-                    j++; // skip next token, we already know it should be the filename
-                }
-                else
-                {
-                    printf("Missing filename for \">\"\n");
-                }
-            }
-            else if (!strcmp(TOKENS[j], "2>"))
-            {
-                // this check is separate and before the other to ensure no out of bounds access.
-                if (j + 1 == num_tok)
-                {
-                    printf("Missing filename for \"2>\"\n");
-                    break;
-                }
-                if (TOKENS[j + 1] != NULL)
-                {
-                    saved_stderr = open(TOKENS[j + 1], O_RDWR|O_CREAT, 0666);
-                    j++; // skip next token, we already know it should be the filename
-                }
-                else
-                {
-                    printf("Missing filename for \"2>\"\n");
-                }
-            }
-            else if (!strcmp(TOKENS[j], "&"))
-            {
-                /* code */
-            }
-            else
-            {
-                jprog_argv[jprog_argc] = TOKENS[j];
-                jprog_argc++;
-            }
-        }
-
+        //printf("numbfp %d", num_tok_before_pipe);
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
         {
-            for (int k = 0; k < num_tok_before_pipe; k++)
+           // printf("happy");
+            // &= because both process need valid input
+            user_input_valid &= evaluate_command_tokens(0, num_tok_before_pipe-1, num_tok_before_pipe-1, &ksaved_stdin,
+                                                        &ksaved_stdout, &ksaved_stderr, kprog_argv, &kprog_argc);
+
+            if (user_input_valid)
             {
-                if (!strcmp(TOKENS[k], "<"))
+                pipe(my_pipe);
+                pid_t pid = fork();
+                if (pid == (pid_t)0)
                 {
-                    // this check is separate and before the other to ensure no out of bounds access.
-                    if (k + 1 == num_tok)
-                    {
-                        printf("Missing filename for \"<\"\n");
-                        break;
-                    }
-                    if (TOKENS[k + 1] != NULL)
-                    {
-                        fclose(stdin);
-                        stdin = fopen(TOKENS[k + 1], "w");
-                        k++; // skip next token, we already know it should be the filename
-                    }
-                    else
-                    {
-                        printf("Missing filename for \"<\"\n");
-                    }
-                }
-                else if (!strcmp(TOKENS[k], ">"))
-                {
-                    // this check is separate and before the other to ensure no out of bounds access.
-                    if (k + 1 == num_tok)
-                    {
-                        printf("Missing filename for \">\"\n");
-                        break;
-                    }
-                    if (TOKENS[k + 1] != NULL)
-                    {
-                        fclose(stdout);
-                        stdout = fopen(TOKENS[k + 1], "w");
-                        k++; // skip next token, we already know it should be the filename
-                    }
-                    else
-                    {
-                        printf("Missing filename for \">\"\n");
-                    }
-                }
-                else if (!strcmp(TOKENS[k], "2>"))
-                {
-                    // this check is separate and before the other to ensure no out of bounds access.
-                    if (k + 1 == num_tok)
-                    {
-                        printf("Missing filename for \"2>\"\n");
-                        break;
-                    }
-                    if (TOKENS[k + 1] != NULL)
-                    {
-                        fclose(stderr);
-                        stderr = fopen(TOKENS[k + 1], "w");
-                        k++; // skip next token, we already know it should be the filename
-                    }
-                    else
-                    {
-                        printf("Missing filename for \"2>\"\n");
-                    }
-                }
-                else if (!strcmp(TOKENS[k], "&"))
-                {
-                    /* code */
+                    //k child
+                    close(my_pipe[0]);
+                    dup2(my_pipe[1], STDOUT_FILENO);
+                    spawn_process(kprog_argv, pid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
                 }
                 else
                 {
-                    kprog_argv[kprog_argc] = TOKENS[k];
-                    kprog_argc++;
+                    //parent, spawning j child
+                    pid_t pid = fork();
+                    if (pid == (pid_t)0)
+                    {
+                        close(my_pipe[1]);
+                        dup2(my_pipe[0], STDIN_FILENO);
+                        spawn_process(jprog_argv, pid, my_pipe[0], jsaved_stdout, jsaved_stderr, 1);
+                    }
+                    else
+                    {
+                        //parent
+                        close(my_pipe[0]);
+                        close(my_pipe[1]);
+                    }
                 }
-            }
-            pipe(my_pipe);
-            pid_t pid = fork();
-            if (pid == (pid_t)0)
-            {
-                close(my_pipe[1]);
-                execvp(kprog_argv[0], kprog_argv);
-                printf("here3");
+                
             }
             else
             {
-                close(my_pipe[0]);
-                execvp(jprog_argv[0], jprog_argv);
-                printf("here2");
+                printf("YASH: Invalid input");
             }
         }
         else
         {
-            pid_t pid = fork();
-            if (pid == (pid_t)0)
+            if (user_input_valid)
             {
-                spawn_process(jprog_argv, pid, saved_stdin, saved_stdout, saved_stderr, 1);
+                pid_t pid = fork();
+                if (pid == (pid_t)0)
+                {
+                    spawn_process(jprog_argv, pid, jsaved_stdin, jsaved_stdout, jsaved_stderr, 1);
+                }
+                else
+                {
+                    // this is the parent (shell)
+                }
             }
             else
             {
-                // this is the parent (shell)
-                if(shell_focused)
-                {
-                    if(!shell_pgid)
-                    {
-                        shell_pgid = pid;
-                    }
-                    setpgid(pid, shell_pgid);
-                }
+                printf("YASH: Invalid input");
             }
         }
-
-        while(wait(&status) > 0){}
+        while (wait(&status) > 0)
+        {
+        }
     }
 
     return 0;
