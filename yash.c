@@ -18,6 +18,7 @@ char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
 extern char **environ;
 
+int at_prompt = 0;
 int shell_term;
 int shell_focused;
 pid_t shell_pgid;
@@ -57,7 +58,12 @@ int parse_user_input(char *user_str, int* num_tok_before_pipe)
 
 void InterruptHandler()
 {
+    fflush(stdout);
     printf("\n");
+    if(at_prompt)
+    {
+        printf("# ");
+    }
 }
 
 void init_shell()
@@ -260,7 +266,10 @@ int main(int argc, char **argv)
         memset(kprog_argv, 0, MAX_INPUT_SIZE);
 
         int status;
+
+        at_prompt = 1;
         user_str = readline("# ");
+        at_prompt = 0;
         int num_tok_before_pipe = 0;
         parse_user_input(user_str, &num_tok_before_pipe);
 
