@@ -101,26 +101,7 @@ void init_shell()
 
 void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
 {
-    if (shell_focused)
-    {
-        pid_t pid = getpid();
-        if (pgid == 0)
-            pgid = pid;
-        setpgid(pid, pgid);
-
-        if (fg)
-        {
-            tcsetpgrp(shell_term, pgid);
-        }
-
-        signal(SIGINT, SIG_DFL);
-        signal(SIGQUIT, SIG_DFL);
-        signal(SIGTSTP, SIG_DFL);
-        signal(SIGTTIN, SIG_DFL);
-        signal(SIGTTOU, SIG_DFL);
-        signal(SIGCHLD, SIG_DFL);
-    }
-
+    signal(SIGTSTP, SIG_DFL);
     if (infile != STDIN_FILENO)
     {
         dup2(infile, STDIN_FILENO);
@@ -318,6 +299,9 @@ int main(int argc, char **argv)
                         //parent
                         close(my_pipe[0]);
                         close(my_pipe[1]);
+                        while (wait(&status) > 0)
+                        {
+                        }
                     }
                 }
                 
@@ -339,6 +323,9 @@ int main(int argc, char **argv)
                 else
                 {
                     // this is the parent (shell)
+                    while (wait(&status) > 0)
+                    {
+                    }
                 }
             }
             else
@@ -346,9 +333,7 @@ int main(int argc, char **argv)
                 printf("YASH: Invalid input");
             }
         }
-        while (wait(&status) > 0)
-        {
-        }
+
     }
 
     return 0;
