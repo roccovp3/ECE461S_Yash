@@ -96,22 +96,27 @@ void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfil
     }
 
     execvp(argv[0], argv);
-    perror("YASH: Failed to execute process");
+    perror("YASH: Failed to execute process\n");
     exit(1);
 }
 
-int shell_builtin_commands(char* user_str, process_stack_t* pprocess_stack)
+int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
 {
-    int status;
-    if(!strcmp(user_str, "fg") && (strlen(user_str) == strlen("fg")))
+    if((pprocess_stack->top) == -1)
     {
-        while(kill(pprocess_stack->arr[pprocess_stack->top-1], 0) != 0)
+        return 0;
+    }
+    
+    int status;
+    if(!strcmp(TOKENS[0], "fg") && (num_tok == 1))
+    {
+        while(kill(pprocess_stack->arr[(pprocess_stack->top)-1], 0) != 0)
         {
-            printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top-1]);
+            printf("pid checking: %d", pprocess_stack->arr[(pprocess_stack->top)-1]);
             //process no longer exists
-            pprocess_stack->top--;
+            (pprocess_stack->top)--;
 
-            if(pprocess_stack->top == -1)
+            if((pprocess_stack->top) == -1)
             {
                 printf("No processes in the background\n");
                 return 0;
@@ -119,27 +124,27 @@ int shell_builtin_commands(char* user_str, process_stack_t* pprocess_stack)
             
         }
 
-        while(pprocess_stack->top >= 0)
+        while((pprocess_stack->top) >= 0)
         {
             //process no longer stopped
-            if(pprocess_stack->top == -1)
+            if((pprocess_stack->top) == -1)
             {
                 printf("No process in the background\n");
                 return 0;
             }
-            if(kill(pprocess_stack->arr[pprocess_stack->top-1], SIGCONT) == 0)
+            if(kill((pprocess_stack->arr)[pprocess_stack->top-1], SIGCONT) == 0)
             {
-                printf("here");
                 return 1;
             }
-            else
-            {
-                pprocess_stack->top--;
-            }
+            pprocess_stack->top--;
 
         }
 
         printf("No processes in the background\n");
+        return 0;
+    }
+    else
+    {
         return 0;
     }
 }
@@ -241,11 +246,9 @@ int main(int argc, char **argv)
     char *user_str;
 
     process_stack_t process_stack = {
-        .top = 0,
+        .top = -1,
         .arr = {-1},
     };
-    process_stack.top = 0;
-    process_stack.arr[0] = -1;
 
     signal(SIGINT, interrupt_handler);
     signal(SIGTSTP, suspend_handler);
@@ -281,8 +284,6 @@ int main(int argc, char **argv)
 
         int num_tok_before_pipe = 0;
 
-        shell_builtin_commands(user_str, &process_stack);
-
         parse_user_input(user_str, &num_tok_before_pipe);
 
         int num_tok = 0;
@@ -295,6 +296,17 @@ int main(int argc, char **argv)
                                                        &jsaved_stdout, &jsaved_stderr, jprog_argv, &jprog_argc);
 
         free(user_str);
+
+        int ran_shell_builtin = 0;
+        if(user_input_valid)
+        {
+            pid_t pid = shell_builtin_commands(&process_stack, num_tok);
+            if(pid)
+            {
+                waitpid(pid, &status, WUNTRACED);
+                continue;
+            }
+        }
 
         //printf("numbfp %d", num_tok_before_pipe);
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
@@ -362,8 +374,8 @@ int main(int argc, char **argv)
 
                     if(WIFSTOPPED(status))
                     {
-                        process_stack.arr[process_stack.top] = pid;
                         process_stack.top++;
+                        process_stack.arr[process_stack.top] = pid;
                     }
                 }
             }
