@@ -78,6 +78,7 @@ void suspend_handler()
 
 void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
 {
+    signal(SIGINT, SIG_DFL);
     signal(SIGTSTP, suspend_handler);
     if (infile != STDIN_FILENO)
     {
@@ -100,14 +101,15 @@ void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfil
     exit(1);
 }
 
-int shell_builtin_commands(process_stack_t* pprocess_stack, int* num_tok)
+// return 0 if input was not a shell command, 1 otherwise
+int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
 {
     int status;
-    if(!strcmp(TOKENS[0], "fg") && (*num_tok == 1))
+    if(!strcmp(TOKENS[0], "fg") && (num_tok == 1))
     {
         if((pprocess_stack->top) == -1)
         {
-            return 0;
+            return 1;
         }
         while(kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
         {
@@ -118,7 +120,7 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int* num_tok)
             if((pprocess_stack->top) == -1)
             {
                 printf("No processes in the background\n");
-                return 0;
+                return 1;
             }
             
         }
@@ -129,7 +131,7 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int* num_tok)
             if((pprocess_stack->top) == -1)
             {
                 printf("No process in the background\n");
-                return 0;
+                return 1;
             }
             if(kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
             {
@@ -146,7 +148,7 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int* num_tok)
         }
 
         printf("No processes in the background\n");
-        return 0;
+        return 1;
     }
     else
     {
@@ -155,11 +157,14 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int* num_tok)
 }
 
 int evaluate_command_tokens(int start_global_tokens_index, int stop_global_tokens_index, int num_tok, int *psaved_stdin,
-                            int *psaved_stdout, int *psaved_stderr, char **prog_argv, int *pprog_argc)
+                            int *psaved_stdout, int *psaved_stderr, char **prog_argv, int *pprog_argc, process_stack_t* pprocess_stack)
 {
     int user_input_valid = 1;
     for (int j = start_global_tokens_index; j < stop_global_tokens_index; j++)
     {
+
+        int shell_command = shell_builtin_commands(pprocess_stack, num_tok);
+        if(shell_command) break;
 
         if (!strcmp(TOKENS[j], "<"))
         {
@@ -298,20 +303,25 @@ int main(int argc, char **argv)
         }
 
         int user_input_valid = evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin,
-                                                       &jsaved_stdout, &jsaved_stderr, jprog_argv, &jprog_argc);
+                                                       &jsaved_stdout, &jsaved_stderr, jprog_argv, &jprog_argc, &process_stack);
 
         free(user_str);
 
-        int ran_shell_builtin = 0;
-        if(user_input_valid)
-        {
-            pid_t pid = shell_builtin_commands(&process_stack, &num_tok);
-            if(pid)
-            {
-                waitpid(pid, &status, WUNTRACED);
-                continue;
-            }
-        }
+        // int ran_shell_builtin = 0;
+        // if(user_input_valid)
+        // {
+        //     int no_suspended_processes = 1;
+        //     pid_t pid = shell_builtin_commands(&process_stack, &num_tok, &no_suspended_processes);
+        //     if(no_suspended_processes)
+        //     {
+        //         continue;
+        //     }
+        //     else if(pid)
+        //     {
+        //         waitpid(pid, &status, WUNTRACED);
+        //         continue;
+        //     }
+        // }
 
         //printf("numbfp %d", num_tok_before_pipe);
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
@@ -319,7 +329,7 @@ int main(int argc, char **argv)
            // printf("happy");
             // &= because both process need valid input
             user_input_valid &= evaluate_command_tokens(0, num_tok_before_pipe-1, num_tok_before_pipe-1, &ksaved_stdin,
-                                                        &ksaved_stdout, &ksaved_stderr, kprog_argv, &kprog_argc);
+                                                        &ksaved_stdout, &ksaved_stderr, kprog_argv, &kprog_argc, &process_stack);
 
             if (user_input_valid)
             {
