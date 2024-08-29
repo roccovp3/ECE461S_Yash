@@ -16,12 +16,7 @@
 
 char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
-extern char **environ;
-
 int at_prompt = 0;
-int shell_term;
-int shell_focused;
-pid_t shell_pgid;
 
 int parse_user_input(char *user_str, int* num_tok_before_pipe)
 {
@@ -56,7 +51,7 @@ int parse_user_input(char *user_str, int* num_tok_before_pipe)
     return 0;
 }
 
-void InterruptHandler()
+void interrupt_handler()
 {
     fflush(stdout);
     printf("\n");
@@ -66,42 +61,19 @@ void InterruptHandler()
     }
 }
 
-void init_shell()
+void suspend_handler()
 {
-    shell_term = STDIN_FILENO;
-    shell_focused = isatty(shell_term);
-    shell_pgid = getpgrp();
-
-    if (shell_focused)
+    fflush(stdout);
+    printf("\n");
+    if(at_prompt)
     {
-        while (tcgetpgrp(shell_term) != shell_pgid)
-        {
-            kill(-shell_pgid, SIGTTIN);
-            shell_pgid = getpgrp();
-        }
-
-        signal(SIGINT, InterruptHandler);
-        signal(SIGQUIT, SIG_IGN);
-        signal(SIGTSTP, SIG_IGN);
-        signal(SIGTTIN, SIG_IGN);
-        signal(SIGTTOU, SIG_IGN);
-        signal(SIGCHLD, SIG_IGN);
-
-        shell_pgid = getpid();
-
-        if (setpgid(shell_pgid, shell_pgid) < 0)
-        {
-            perror("YASH: Couldn't put shell in its own process group");
-            exit(1);
-        }
-
-        tcsetpgrp(shell_term, shell_pgid);
+        printf("# ");
     }
 }
 
 void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
 {
-    signal(SIGTSTP, SIG_DFL);
+    signal(SIGTSTP, suspend_handler);
     if (infile != STDIN_FILENO)
     {
         dup2(infile, STDIN_FILENO);
@@ -218,11 +190,9 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
 int main(int argc, char **argv)
 {
     char *user_str;
-    shell_term = STDIN_FILENO;
-    shell_pgid = getpgrp();
 
-    signal(SIGINT, InterruptHandler);
-    signal(SIGTSTP, SIG_IGN);
+    signal(SIGINT, interrupt_handler);
+    signal(SIGTSTP, suspend_handler);
 
     for (;;)
     {
@@ -250,6 +220,7 @@ int main(int argc, char **argv)
 
         at_prompt = 1;
         user_str = readline("# ");
+        fflush(stdout);
         at_prompt = 0;
         int num_tok_before_pipe = 0;
         parse_user_input(user_str, &num_tok_before_pipe);
@@ -299,9 +270,7 @@ int main(int argc, char **argv)
                         //parent
                         close(my_pipe[0]);
                         close(my_pipe[1]);
-                        while (wait(&status) > 0)
-                        {
-                        }
+                        waitpid(pid, &status, WUNTRACED);
                     }
                 }
                 
@@ -323,9 +292,7 @@ int main(int argc, char **argv)
                 else
                 {
                     // this is the parent (shell)
-                    while (wait(&status) > 0)
-                    {
-                    }
+                    waitpid(pid, &status, WUNTRACED);
                 }
             }
             else
