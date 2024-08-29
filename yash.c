@@ -100,19 +100,18 @@ void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfil
     exit(1);
 }
 
-int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
+int shell_builtin_commands(process_stack_t* pprocess_stack, int* num_tok)
 {
-    if((pprocess_stack->top) == -1)
-    {
-        return 0;
-    }
-    
     int status;
-    if(!strcmp(TOKENS[0], "fg") && (num_tok == 1))
+    if(!strcmp(TOKENS[0], "fg") && (*num_tok == 1))
     {
-        while(kill(pprocess_stack->arr[(pprocess_stack->top)-1], 0) != 0)
+        if((pprocess_stack->top) == -1)
         {
-            printf("pid checking: %d", pprocess_stack->arr[(pprocess_stack->top)-1]);
+            return 0;
+        }
+        while(kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
+        {
+            printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top]);
             //process no longer exists
             (pprocess_stack->top)--;
 
@@ -124,7 +123,7 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
             
         }
 
-        while((pprocess_stack->top) >= 0)
+        while(1)
         {
             //process no longer stopped
             if((pprocess_stack->top) == -1)
@@ -132,12 +131,18 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
                 printf("No process in the background\n");
                 return 0;
             }
-            if(kill((pprocess_stack->arr)[pprocess_stack->top-1], SIGCONT) == 0)
+            if(kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
             {
+                pprocess_stack->top--;
+                pid_t pid = waitpid(pprocess_stack->arr[pprocess_stack->top+1], &status, WUNTRACED);
+                if(WIFSTOPPED(status) && !WIFEXITED(status))
+                {
+                    pprocess_stack->top++;
+                    pprocess_stack->arr[pprocess_stack->top] = pid;
+                }
                 return 1;
             }
             pprocess_stack->top--;
-
         }
 
         printf("No processes in the background\n");
@@ -300,7 +305,7 @@ int main(int argc, char **argv)
         int ran_shell_builtin = 0;
         if(user_input_valid)
         {
-            pid_t pid = shell_builtin_commands(&process_stack, num_tok);
+            pid_t pid = shell_builtin_commands(&process_stack, &num_tok);
             if(pid)
             {
                 waitpid(pid, &status, WUNTRACED);
@@ -344,10 +349,10 @@ int main(int argc, char **argv)
                         close(my_pipe[1]);
                         pid = waitpid(pid, &status, WUNTRACED);
 
-                        if(WIFSTOPPED(status))
+                        if(WIFSTOPPED(status) && !WIFEXITED(status))
                         {
-                            process_stack.arr[process_stack.top] = pid;
                             process_stack.top++;
+                            process_stack.arr[process_stack.top] = pid;
                         }
                     }
                 }
@@ -372,7 +377,7 @@ int main(int argc, char **argv)
                     // this is the parent (shell)
                     waitpid(pid, &status, WUNTRACED);
 
-                    if(WIFSTOPPED(status))
+                    if(WIFSTOPPED(status) && !WIFEXITED(status))
                     {
                         process_stack.top++;
                         process_stack.arr[process_stack.top] = pid;
