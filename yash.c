@@ -281,11 +281,7 @@ int main(int argc, char **argv)
 
         int num_tok_before_pipe = 0;
 
-        int ran_shell_command = 0;
-        
-        ran_shell_command = shell_builtin_commands(user_str, &process_stack);
-
-        printf("shell %d\n", ran_shell_command);
+        shell_builtin_commands(user_str, &process_stack);
 
         parse_user_input(user_str, &num_tok_before_pipe);
 
