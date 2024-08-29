@@ -16,6 +16,11 @@
 
 char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
+typedef struct {
+    pid_t arr[1000]; //if you have more than 1000 processes in the background im sorry...
+    int top;
+} process_stack_t;
+
 int at_prompt = 0;
 
 int parse_user_input(char *user_str, int* num_tok_before_pipe)
@@ -93,6 +98,50 @@ void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfil
     execvp(argv[0], argv);
     perror("YASH: Failed to execute process");
     exit(1);
+}
+
+int shell_builtin_commands(char* user_str, process_stack_t* pprocess_stack)
+{
+    int status;
+    if(!strcmp(user_str, "fg") && (strlen(user_str) == strlen("fg")))
+    {
+        while(kill(pprocess_stack->arr[pprocess_stack->top-1], 0) != 0)
+        {
+            printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top-1]);
+            //process no longer exists
+            pprocess_stack->top--;
+
+            if(pprocess_stack->top == -1)
+            {
+                printf("No processes in the background\n");
+                return 0;
+            }
+            
+        }
+
+        while(pprocess_stack->top >= 0)
+        {
+            //process no longer stopped
+            if(pprocess_stack->top == -1)
+            {
+                printf("No process in the background\n");
+                return 0;
+            }
+            if(kill(pprocess_stack->arr[pprocess_stack->top-1], SIGCONT) == 0)
+            {
+                printf("here");
+                return 1;
+            }
+            else
+            {
+                pprocess_stack->top--;
+            }
+
+        }
+
+        printf("No processes in the background\n");
+        return 0;
+    }
 }
 
 int evaluate_command_tokens(int start_global_tokens_index, int stop_global_tokens_index, int num_tok, int *psaved_stdin,
@@ -191,6 +240,13 @@ int main(int argc, char **argv)
 {
     char *user_str;
 
+    process_stack_t process_stack = {
+        .top = 0,
+        .arr = {-1},
+    };
+    process_stack.top = 0;
+    process_stack.arr[0] = -1;
+
     signal(SIGINT, interrupt_handler);
     signal(SIGTSTP, suspend_handler);
 
@@ -222,10 +278,16 @@ int main(int argc, char **argv)
         user_str = readline("# ");
         fflush(stdout);
         at_prompt = 0;
-        int num_tok_before_pipe = 0;
-        parse_user_input(user_str, &num_tok_before_pipe);
 
-        free(user_str);
+        int num_tok_before_pipe = 0;
+
+        int ran_shell_command = 0;
+        
+        ran_shell_command = shell_builtin_commands(user_str, &process_stack);
+
+        printf("shell %d\n", ran_shell_command);
+
+        parse_user_input(user_str, &num_tok_before_pipe);
 
         int num_tok = 0;
         while (strcmp(TOKENS[num_tok], ""))
@@ -235,6 +297,8 @@ int main(int argc, char **argv)
 
         int user_input_valid = evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin,
                                                        &jsaved_stdout, &jsaved_stderr, jprog_argv, &jprog_argc);
+
+        free(user_str);
 
         //printf("numbfp %d", num_tok_before_pipe);
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
@@ -270,7 +334,13 @@ int main(int argc, char **argv)
                         //parent
                         close(my_pipe[0]);
                         close(my_pipe[1]);
-                        waitpid(pid, &status, WUNTRACED);
+                        pid = waitpid(pid, &status, WUNTRACED);
+
+                        if(WIFSTOPPED(status))
+                        {
+                            process_stack.arr[process_stack.top] = pid;
+                            process_stack.top++;
+                        }
                     }
                 }
                 
@@ -293,6 +363,12 @@ int main(int argc, char **argv)
                 {
                     // this is the parent (shell)
                     waitpid(pid, &status, WUNTRACED);
+
+                    if(WIFSTOPPED(status))
+                    {
+                        process_stack.arr[process_stack.top] = pid;
+                        process_stack.top++;
+                    }
                 }
             }
             else
