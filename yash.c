@@ -159,6 +159,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             {
                 pprocess_stack->top--;
                 tcsetpgrp(shell_terminal, pprocess_stack->arr[pprocess_stack->top + 1]);
+                printf("%s\n", (pprocess_stack->user_str[pprocess_stack->top+1]));
                 waitpid(pprocess_stack->arr[pprocess_stack->top + 1], &status, WUNTRACED);
                 tcsetpgrp(shell_terminal, shell_pgid);
                 if (WIFSTOPPED(status) && !WIFEXITED(status))
@@ -206,7 +207,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
                 pprocess_stack->top--;
                 pid_t pid = pprocess_stack->arr[pprocess_stack->top + 1];
                 tcsetpgrp(shell_terminal, pid);
-                printf("[%d] %c %s\t%s\n", pid, '-', "Running", (pprocess_stack->user_str[pprocess_stack->top+1]));
+                printf("[%d] %c %s\t%s\n", pid, '+', "Running", (pprocess_stack->user_str[pprocess_stack->top+1]));
                 waitpid(pid, &status, WNOHANG|WUNTRACED);
                 tcsetpgrp(shell_terminal, shell_pgid);
                 if (WIFSTOPPED(status) && !WIFEXITED(status))
@@ -220,6 +221,35 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         }
 
         printf("No processes in the background\n");
+        return 1;
+    }
+    else if(!strcmp(TOKENS[0], "jobs") && (num_tok == 1))
+    {
+        int pprocess_stack_top = pprocess_stack->top;
+        if(pprocess_stack_top == -1) return 1;
+        waitpid(pprocess_stack->arr[pprocess_stack_top], &status, WNOHANG|WUNTRACED);
+        if(WIFSTOPPED(status))
+        {
+            printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
+        }
+        else
+        {
+            printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
+        }
+        pprocess_stack_top--;
+        while(pprocess_stack_top >= 0)
+        {
+            waitpid(pprocess_stack->arr[pprocess_stack_top], &status, WNOHANG|WUNTRACED);
+            if(WIFSTOPPED(status))
+            {
+                printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
+            }
+            else
+            {
+                printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
+            }
+            pprocess_stack_top--;
+        }
         return 1;
     }
     else
