@@ -100,6 +100,7 @@ void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfil
     signal(SIGINT, SIG_DFL);
     signal(SIGQUIT, SIG_DFL);
     signal(SIGTSTP, SIG_DFL);
+    signal(SIGSTOP, SIG_DFL);
     signal(SIGTTIN, SIG_DFL);
     signal(SIGTTOU, SIG_DFL);
     signal(SIGCHLD, SIG_DFL);
@@ -207,7 +208,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
                 pprocess_stack->top--;
                 pid_t pid = pprocess_stack->arr[pprocess_stack->top + 1];
                 tcsetpgrp(shell_terminal, pid);
-                printf("[%d] %c %s\t%s\n", pid, '+', "Running", (pprocess_stack->user_str[pprocess_stack->top+1]));
+                printf("[%d]%c %s\t%s\n", pid, '+', "Running", (pprocess_stack->user_str[pprocess_stack->top+1]));
                 waitpid(pid, &status, WNOHANG|WUNTRACED);
                 tcsetpgrp(shell_terminal, shell_pgid);
                 if (WIFSTOPPED(status) && !WIFEXITED(status))
@@ -230,11 +231,11 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         waitpid(pprocess_stack->arr[pprocess_stack_top], &status, WNOHANG|WUNTRACED);
         if(WIFSTOPPED(status))
         {
-            printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
+            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
         }
         else
         {
-            printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
+            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
         }
         pprocess_stack_top--;
         while(pprocess_stack_top >= 0)
@@ -242,11 +243,11 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             waitpid(pprocess_stack->arr[pprocess_stack_top], &status, WNOHANG|WUNTRACED);
             if(WIFSTOPPED(status))
             {
-                printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
+                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
             }
             else
             {
-                printf("[%d] %c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
+                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
             }
             pprocess_stack_top--;
         }
@@ -370,6 +371,7 @@ int main(int argc, char **argv)
     signal(SIGINT, SIG_IGN);
     signal(SIGQUIT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
+    signal(SIGSTOP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
     signal(SIGCHLD, SIG_IGN);
