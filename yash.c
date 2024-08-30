@@ -7,23 +7,29 @@
 #include <stdlib.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <termios.h>
 #include <unistd.h>
 
-//#define DEBUG
+// #define DEBUG
 
 #define MAX_INPUT_SIZE 2000
 #define MAX_TOKEN_SIZE 30
 
 char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
-typedef struct {
-    pid_t arr[1000]; //if you have more than 1000 processes in the background im sorry...
+typedef struct
+{
+    pid_t arr[1000]; // if you have more than 1000 processes in the background im sorry...
     int top;
 } process_stack_t;
 
 int at_prompt = 0;
+int shell_terminal;
+int shell_is_interactive;
+pid_t shell_pgid;
+struct termios shell_tmodes;
 
-int parse_user_input(char *user_str, int* num_tok_before_pipe)
+int parse_user_input(char *user_str, int *num_tok_before_pipe)
 {
     char *token;
 
@@ -33,12 +39,12 @@ int parse_user_input(char *user_str, int* num_tok_before_pipe)
     int pipe_found = 0;
     while (token != 0)
     {
-        if(!strcmp(token, "|"))
+        if (!strcmp(token, "|"))
         {
             pipe_found = 1;
             (*num_tok_before_pipe)++;
         }
-        if(strcmp(token, "|") && !pipe_found)
+        if (strcmp(token, "|") && !pipe_found)
         {
             (*num_tok_before_pipe)++;
         }
@@ -48,7 +54,7 @@ int parse_user_input(char *user_str, int* num_tok_before_pipe)
         i++;
     }
 
-    if(!pipe_found)
+    if (!pipe_found)
     {
         *num_tok_before_pipe = 0;
     }
@@ -60,7 +66,7 @@ void interrupt_handler()
 {
     fflush(stdout);
     printf("\n");
-    if(at_prompt)
+    if (at_prompt)
     {
         printf("# ");
     }
@@ -70,16 +76,33 @@ void suspend_handler()
 {
     fflush(stdout);
     printf("\n");
-    if(at_prompt)
+    if (at_prompt)
     {
         printf("# ");
     }
 }
 
+void quit_handler()
+{
+    exit(0);
+}
+
 void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
 {
+    pid_t pid = getpid();
+    if (pgid == 0)
+        pgid = pid;
+    setpgid(pid, pgid);
+    if (fg)
+        tcsetpgrp(shell_terminal, pgid);
+
     signal(SIGINT, SIG_DFL);
-    signal(SIGTSTP, suspend_handler);
+    signal(SIGQUIT, SIG_DFL);
+    signal(SIGTSTP, SIG_DFL);
+    signal(SIGTTIN, SIG_DFL);
+    signal(SIGTTOU, SIG_DFL);
+    signal(SIGCHLD, SIG_DFL);
+
     if (infile != STDIN_FILENO)
     {
         dup2(infile, STDIN_FILENO);
@@ -95,53 +118,53 @@ void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfil
         dup2(errfile, STDERR_FILENO);
         close(errfile);
     }
-
     execvp(argv[0], argv);
     perror("YASH: Failed to execute process\n");
     exit(1);
 }
 
 // return 0 if input was not a shell command, 1 otherwise
-int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
+int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
 {
     int status;
-    if(!strcmp(TOKENS[0], "fg") && (num_tok == 1))
+    if (!strcmp(TOKENS[0], "fg") && (num_tok == 1))
     {
-        if((pprocess_stack->top) == -1)
+        if ((pprocess_stack->top) == -1)
         {
             return 1;
         }
-        while(kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
+        while (kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
         {
             printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top]);
-            //process no longer exists
+            // process no longer exists
             (pprocess_stack->top)--;
 
-            if((pprocess_stack->top) == -1)
+            if ((pprocess_stack->top) == -1)
             {
                 printf("No processes in the background\n");
                 return 1;
             }
-            
         }
 
-        while(1)
+        while (1)
         {
-            //process no longer stopped
-            if((pprocess_stack->top) == -1)
+            // process no longer stopped
+            if ((pprocess_stack->top) == -1)
             {
                 printf("No process in the background\n");
                 return 1;
             }
-            if(kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
+            if (kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
             {
                 pprocess_stack->top--;
-                pid_t pid = waitpid(pprocess_stack->arr[pprocess_stack->top+1], &status, WUNTRACED);
-                if(WIFSTOPPED(status) && !WIFEXITED(status))
+                tcsetpgrp(shell_terminal, pprocess_stack->arr[pprocess_stack->top + 1]);
+                waitpid(pprocess_stack->arr[pprocess_stack->top + 1], &status, WUNTRACED);
+                tcsetpgrp(shell_terminal, shell_pgid);
+                if (WIFSTOPPED(status) && !WIFEXITED(status))
                 {
                     pprocess_stack->top++;
-                    pprocess_stack->arr[pprocess_stack->top] = pid;
                 }
+                tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
                 return 1;
             }
             pprocess_stack->top--;
@@ -157,14 +180,16 @@ int shell_builtin_commands(process_stack_t* pprocess_stack, int num_tok)
 }
 
 int evaluate_command_tokens(int start_global_tokens_index, int stop_global_tokens_index, int num_tok, int *psaved_stdin,
-                            int *psaved_stdout, int *psaved_stderr, char **prog_argv, int *pprog_argc, process_stack_t* pprocess_stack)
+                            int *psaved_stdout, int *psaved_stderr, char **prog_argv, int *pprog_argc,
+                            process_stack_t *pprocess_stack)
 {
     int user_input_valid = 1;
     for (int j = start_global_tokens_index; j < stop_global_tokens_index; j++)
     {
 
         int shell_command = shell_builtin_commands(pprocess_stack, num_tok);
-        if(shell_command) break;
+        if (shell_command)
+            break;
 
         if (!strcmp(TOKENS[j], "<"))
         {
@@ -260,8 +285,20 @@ int main(int argc, char **argv)
         .arr = {-1},
     };
 
-    signal(SIGINT, interrupt_handler);
-    signal(SIGTSTP, suspend_handler);
+    while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
+        kill(-shell_pgid, SIGTTIN);
+
+    signal(SIGINT, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
+
+    shell_pgid = getpid();
+    setpgid(shell_pgid, shell_pgid);
+    tcsetpgrp(shell_terminal, shell_pgid);
+    tcgetattr(shell_terminal, &shell_tmodes);
 
     for (;;)
     {
@@ -285,11 +322,16 @@ int main(int argc, char **argv)
         memset(jprog_argv, 0, MAX_INPUT_SIZE);
         memset(kprog_argv, 0, MAX_INPUT_SIZE);
 
-        int status;
+        int status = 0;
 
+        fflush(stdout);
         at_prompt = 1;
         user_str = readline("# ");
-        fflush(stdout);
+        if(user_str == NULL)
+        {
+            //Ctrl-D (EOF) encountered
+            exit(0);
+        }
         at_prompt = 0;
 
         int num_tok_before_pipe = 0;
@@ -302,34 +344,21 @@ int main(int argc, char **argv)
             num_tok++;
         }
 
-        int user_input_valid = evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin,
-                                                       &jsaved_stdout, &jsaved_stderr, jprog_argv, &jprog_argc, &process_stack);
+        int user_input_valid =
+            evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin, &jsaved_stdout,
+                                    &jsaved_stderr, jprog_argv, &jprog_argc, &process_stack);
 
         free(user_str);
+        user_str = NULL;
 
-        // int ran_shell_builtin = 0;
-        // if(user_input_valid)
-        // {
-        //     int no_suspended_processes = 1;
-        //     pid_t pid = shell_builtin_commands(&process_stack, &num_tok, &no_suspended_processes);
-        //     if(no_suspended_processes)
-        //     {
-        //         continue;
-        //     }
-        //     else if(pid)
-        //     {
-        //         waitpid(pid, &status, WUNTRACED);
-        //         continue;
-        //     }
-        // }
-
-        //printf("numbfp %d", num_tok_before_pipe);
+        // printf("numbfp %d", num_tok_before_pipe);
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
         {
-           // printf("happy");
+            // printf("happy");
             // &= because both process need valid input
-            user_input_valid &= evaluate_command_tokens(0, num_tok_before_pipe-1, num_tok_before_pipe-1, &ksaved_stdin,
-                                                        &ksaved_stdout, &ksaved_stderr, kprog_argv, &kprog_argc, &process_stack);
+            user_input_valid &=
+                evaluate_command_tokens(0, num_tok_before_pipe - 1, num_tok_before_pipe - 1, &ksaved_stdin,
+                                        &ksaved_stdout, &ksaved_stderr, kprog_argv, &kprog_argc, &process_stack);
 
             if (user_input_valid)
             {
@@ -337,14 +366,14 @@ int main(int argc, char **argv)
                 pid_t pid = fork();
                 if (pid == (pid_t)0)
                 {
-                    //k child
+                    // k child
                     close(my_pipe[0]);
                     dup2(my_pipe[1], STDOUT_FILENO);
                     spawn_process(kprog_argv, pid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
                 }
                 else
                 {
-                    //parent, spawning j child
+                    // parent, spawning j child
                     pid_t pid = fork();
                     if (pid == (pid_t)0)
                     {
@@ -354,19 +383,20 @@ int main(int argc, char **argv)
                     }
                     else
                     {
-                        //parent
+                        // parent
                         close(my_pipe[0]);
                         close(my_pipe[1]);
-                        pid = waitpid(pid, &status, WUNTRACED);
-
-                        if(WIFSTOPPED(status) && !WIFEXITED(status))
+                        tcsetpgrp(shell_terminal, pid);
+                        waitpid(pid, &status, WUNTRACED);
+                        tcsetpgrp(shell_terminal, shell_pgid);
+                        if (WIFSTOPPED(status) && !WIFEXITED(status))
                         {
                             process_stack.top++;
                             process_stack.arr[process_stack.top] = pid;
                         }
+                        tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
                     }
                 }
-                
             }
             else
             {
@@ -385,13 +415,15 @@ int main(int argc, char **argv)
                 else
                 {
                     // this is the parent (shell)
+                    tcsetpgrp(shell_terminal, pid);
                     waitpid(pid, &status, WUNTRACED);
-
-                    if(WIFSTOPPED(status) && !WIFEXITED(status))
+                    tcsetpgrp(shell_terminal, shell_pgid);
+                    if (WIFSTOPPED(status) && !WIFEXITED(status))
                     {
                         process_stack.top++;
                         process_stack.arr[process_stack.top] = pid;
                     }
+                    tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
                 }
             }
             else
@@ -399,7 +431,6 @@ int main(int argc, char **argv)
                 printf("YASH: Invalid input");
             }
         }
-
     }
 
     return 0;
