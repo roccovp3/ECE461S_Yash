@@ -20,6 +20,7 @@ char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 typedef struct
 {
     pid_t arr[1000]; // if you have more than 1000 processes in the background im sorry...
+    char user_str[1000][MAX_INPUT_SIZE];
     int top;
 } process_stack_t;
 
@@ -173,6 +174,54 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         printf("No processes in the background\n");
         return 1;
     }
+    else if(!strcmp(TOKENS[0], "bg") && (num_tok == 1))
+    {
+        if ((pprocess_stack->top) == -1)
+        {
+            return 1;
+        }
+        while (kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
+        {
+            printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top]);
+            // process no longer exists
+            (pprocess_stack->top)--;
+
+            if ((pprocess_stack->top) == -1)
+            {
+                printf("No processes in the background\n");
+                return 1;
+            }
+        }
+
+        while (1)
+        {
+            // process no longer stopped
+            if ((pprocess_stack->top) == -1)
+            {
+                printf("No process in the background\n");
+                return 1;
+            }
+            if (kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
+            {
+                pprocess_stack->top--;
+                pid_t pid = pprocess_stack->arr[pprocess_stack->top + 1];
+                tcsetpgrp(shell_terminal, pid);
+                printf("[%d] %c %s\t%s\n", pid, '-', "Running", (pprocess_stack->user_str[pprocess_stack->top+1]));
+                waitpid(pid, &status, WNOHANG|WUNTRACED);
+                tcsetpgrp(shell_terminal, shell_pgid);
+                if (WIFSTOPPED(status) && !WIFEXITED(status))
+                {
+                    pprocess_stack->top++;
+                }
+                tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+                return 1;
+            }
+            pprocess_stack->top--;
+        }
+
+        printf("No processes in the background\n");
+        return 1;
+    }
     else
     {
         return 0;
@@ -278,7 +327,7 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
 
 int main(int argc, char **argv)
 {
-    char *user_str;
+    char* user_str;
 
     process_stack_t process_stack = {
         .top = -1,
@@ -336,6 +385,9 @@ int main(int argc, char **argv)
 
         int num_tok_before_pipe = 0;
 
+        char user_str_deep_copy[MAX_INPUT_SIZE];
+        strncpy(user_str_deep_copy, user_str, MAX_INPUT_SIZE);
+
         parse_user_input(user_str, &num_tok_before_pipe);
 
         int num_tok = 0;
@@ -347,9 +399,6 @@ int main(int argc, char **argv)
         int user_input_valid =
             evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin, &jsaved_stdout,
                                     &jsaved_stderr, jprog_argv, &jprog_argc, &process_stack);
-
-        free(user_str);
-        user_str = NULL;
 
         // printf("numbfp %d", num_tok_before_pipe);
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
@@ -393,6 +442,7 @@ int main(int argc, char **argv)
                         {
                             process_stack.top++;
                             process_stack.arr[process_stack.top] = pid;
+                            strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                         }
                         tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
                     }
@@ -422,6 +472,7 @@ int main(int argc, char **argv)
                     {
                         process_stack.top++;
                         process_stack.arr[process_stack.top] = pid;
+                        strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                     }
                     tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
                 }
@@ -431,6 +482,7 @@ int main(int argc, char **argv)
                 printf("YASH: Invalid input");
             }
         }
+        free(user_str);
     }
 
     return 0;
