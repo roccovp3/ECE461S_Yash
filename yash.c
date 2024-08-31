@@ -165,13 +165,11 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         {
             return 1;
         }
-        while((pprocess_stack->arr[pprocess_stack->top] < 0) | (pprocess_stack->status[pprocess_stack->top] != STOPPED))
+        while((pprocess_stack->arr[pprocess_stack->top] < 0))
         {
             pprocess_stack->top--;
-            printf("uhoh");
             if ((pprocess_stack->top) == -1)
             {
-                printf("empty");
                 return 1;
             }
         }
@@ -206,7 +204,6 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
                 pprocess_stack->top--;
             }
         }
-        printf("No processes in the background\n");
         return 1;
     }
     else if(!strcmp(TOKENS[0], "bg") && (num_tok == 1))
