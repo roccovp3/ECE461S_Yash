@@ -8,21 +8,42 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <termios.h>
+#include <errno.h>
 #include <unistd.h>
 
 // #define DEBUG
 
 #define MAX_INPUT_SIZE 2000
 #define MAX_TOKEN_SIZE 30
+#define PROCESS_STACK_DEPTH 1000
 
 char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
+typedef enum
+{
+    NONE = 0,
+    RUNNING,
+    STOPPED,
+    DONE,
+    
+} status_t;
+
 typedef struct
 {
-    pid_t arr[1000]; // if you have more than 1000 processes in the background im sorry...
-    char user_str[1000][MAX_INPUT_SIZE];
+    pid_t arr[PROCESS_STACK_DEPTH]; // if you have more than 1000 processes in the background im sorry...
+    char user_str[PROCESS_STACK_DEPTH][MAX_INPUT_SIZE];
+    status_t status[PROCESS_STACK_DEPTH];
+    int size;
     int top;
 } process_stack_t;
+
+process_stack_t process_stack = {
+        .top = -1,
+        .arr = {-1},
+        .status = {0},
+        .user_str = {0},
+        .size = 0,
+    };
 
 int at_prompt = 0;
 int shell_terminal;
@@ -73,19 +94,28 @@ void interrupt_handler()
     }
 }
 
-void suspend_handler()
+void child_handler()
 {
-    fflush(stdout);
-    printf("\n");
-    if (at_prompt)
+    int status;
+    int errno;
+    pid_t pid;
+    do
     {
-        printf("# ");
+        errno = 0;
+        pid = waitpid (WAIT_ANY, &status, WNOHANG | WUNTRACED);
     }
-}
+    while (pid <= 0 && errno == EINTR);
 
-void quit_handler()
-{
-    exit(0);
+    int i = 0;
+    while((process_stack.arr[i] != pid) && (i < PROCESS_STACK_DEPTH))
+    {
+        i++;
+    }
+    if(WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && (pid > 0));
+    {
+        //printf("%d\n", i);
+        process_stack.status[i] = DONE;
+    }
 }
 
 void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
@@ -131,48 +161,51 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
     int status;
     if (!strcmp(TOKENS[0], "fg") && (num_tok == 1))
     {
-        if ((pprocess_stack->top) == -1)
+        if ((pprocess_stack->top) < 0)
         {
             return 1;
         }
-        while (kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
+        while((pprocess_stack->arr[pprocess_stack->top] < 0) | (pprocess_stack->status[pprocess_stack->top] != STOPPED))
         {
-            printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top]);
-            // process no longer exists
-            (pprocess_stack->top)--;
-
-            if ((pprocess_stack->top) == -1)
-            {
-                printf("No processes in the background\n");
-                return 1;
-            }
-        }
-
-        while (1)
-        {
-            // process no longer stopped
-            if ((pprocess_stack->top) == -1)
-            {
-                printf("No process in the background\n");
-                return 1;
-            }
-            if (kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
-            {
-                pprocess_stack->top--;
-                tcsetpgrp(shell_terminal, pprocess_stack->arr[pprocess_stack->top + 1]);
-                printf("%s\n", (pprocess_stack->user_str[pprocess_stack->top+1]));
-                waitpid(pprocess_stack->arr[pprocess_stack->top + 1], &status, WUNTRACED);
-                tcsetpgrp(shell_terminal, shell_pgid);
-                if (WIFSTOPPED(status) && !WIFEXITED(status))
-                {
-                    pprocess_stack->top++;
-                }
-                tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
-                return 1;
-            }
             pprocess_stack->top--;
+            printf("uhoh");
+            if ((pprocess_stack->top) == -1)
+            {
+                printf("empty");
+                return 1;
+            }
         }
-
+        
+        if (kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
+        {
+            tcsetpgrp(shell_terminal, pprocess_stack->arr[pprocess_stack->top]);
+            printf("%s\n", (pprocess_stack->user_str[pprocess_stack->top]));
+            pprocess_stack->status[pprocess_stack->top] = RUNNING;
+            waitpid(pprocess_stack->arr[pprocess_stack->top], &status, WUNTRACED);
+            tcsetpgrp(shell_terminal, shell_pgid);
+            if (WIFSTOPPED(status) && !WIFEXITED(status))
+            {
+                process_stack.status[process_stack.top] = STOPPED;
+            }
+            else
+            {
+                pprocess_stack->arr[pprocess_stack->top] = -1;
+                pprocess_stack->status[pprocess_stack->top] = NONE;
+                pprocess_stack->top--;
+            }
+            tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+            
+            return 1;
+        }
+        else
+        {
+            if(pprocess_stack->status[pprocess_stack->top] == DONE)
+            {
+                pprocess_stack->arr[pprocess_stack->top] = -1;
+                pprocess_stack->status[pprocess_stack->top] = NONE;
+                pprocess_stack->top--;
+            }
+        }
         printf("No processes in the background\n");
         return 1;
     }
@@ -182,18 +215,6 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         {
             return 1;
         }
-        while (kill(pprocess_stack->arr[pprocess_stack->top], 0) != 0)
-        {
-            printf("pid checking: %d", pprocess_stack->arr[pprocess_stack->top]);
-            // process no longer exists
-            (pprocess_stack->top)--;
-
-            if ((pprocess_stack->top) == -1)
-            {
-                printf("No processes in the background\n");
-                return 1;
-            }
-        }
 
         while (1)
         {
@@ -205,20 +226,21 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             }
             if (kill((pprocess_stack->arr)[pprocess_stack->top], SIGCONT) == 0)
             {
-                pprocess_stack->top--;
-                pid_t pid = pprocess_stack->arr[pprocess_stack->top + 1];
+                pid_t pid = pprocess_stack->arr[pprocess_stack->top];
+                pprocess_stack->status[pprocess_stack->top] = RUNNING;
                 tcsetpgrp(shell_terminal, pid);
-                printf("[%d]%c %s\t%s\n", pid, '+', "Running", (pprocess_stack->user_str[pprocess_stack->top+1]));
+                printf("[%d]%c %s\t%s\n", pid, '+', "Running", (pprocess_stack->user_str[pprocess_stack->top]));
                 waitpid(pid, &status, WNOHANG|WUNTRACED);
                 tcsetpgrp(shell_terminal, shell_pgid);
-                if (WIFSTOPPED(status) && !WIFEXITED(status))
-                {
-                    pprocess_stack->top++;
-                }
+                // if (WIFSTOPPED(status) && !WIFEXITED(status))
+                // {
+                //     pprocess_stack->top++;
+                //     pprocess_stack->status[pprocess_stack->top+1] = STOPPED;
+                // }
                 tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
                 return 1;
             }
-            pprocess_stack->top--;
+            //pprocess_stack->top--;
         }
 
         printf("No processes in the background\n");
@@ -226,30 +248,44 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
     }
     else if(!strcmp(TOKENS[0], "jobs") && (num_tok == 1))
     {
-        int pprocess_stack_top = pprocess_stack->top;
-        if(pprocess_stack_top == -1) return 1;
-        waitpid(pprocess_stack->arr[pprocess_stack_top], &status, WNOHANG|WUNTRACED);
-        if(WIFSTOPPED(status))
+        int pprocess_stack_i = pprocess_stack->size-1;
+        if(pprocess_stack_i == -1) return 1;
+        while(pprocess_stack->arr[pprocess_stack_i] <= 0)
         {
-            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
+            pprocess_stack_i--;
         }
-        else
+        if(pprocess_stack->status[pprocess_stack_i] == STOPPED)
         {
-            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '+', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
+            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_i], '+', "Stopped", (pprocess_stack->user_str[pprocess_stack_i]));
         }
-        pprocess_stack_top--;
-        while(pprocess_stack_top >= 0)
+        else if(pprocess_stack->status[pprocess_stack_i] == DONE)
         {
-            waitpid(pprocess_stack->arr[pprocess_stack_top], &status, WNOHANG|WUNTRACED);
-            if(WIFSTOPPED(status))
+            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_i], '+', "Done", (pprocess_stack->user_str[pprocess_stack_i]));
+        }
+        else if(pprocess_stack->status[pprocess_stack_i] == RUNNING)
+        {
+            printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_i], '+', "Running", (pprocess_stack->user_str[pprocess_stack_i]));
+        }
+        pprocess_stack_i--;
+        while(pprocess_stack_i >= 0)
+        {
+            if(pprocess_stack->status[pprocess_stack_i] == STOPPED)
             {
-                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Stopped", (pprocess_stack->user_str[pprocess_stack_top]));
+                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_i], '-', "Stopped", (pprocess_stack->user_str[pprocess_stack_i]));
             }
-            else
+            else if(pprocess_stack->status[pprocess_stack_i] == DONE)
             {
-                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_top], '-', "Running", (pprocess_stack->user_str[pprocess_stack_top]));
+                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_i], '-', "Done", (pprocess_stack->user_str[pprocess_stack_i]));
             }
-            pprocess_stack_top--;
+            else if(pprocess_stack->status[pprocess_stack_i] == RUNNING)
+            {
+                printf("[%d]%c %s\t%s\n", pprocess_stack->arr[pprocess_stack_i], '-', "Running", (pprocess_stack->user_str[pprocess_stack_i]));
+            }
+            pprocess_stack_i--;
+            while(pprocess_stack->arr[pprocess_stack_i] <= 0)
+            {
+                pprocess_stack_i--;
+            }
         }
         return 1;
     }
@@ -360,11 +396,6 @@ int main(int argc, char **argv)
 {
     char* user_str;
 
-    process_stack_t process_stack = {
-        .top = -1,
-        .arr = {-1},
-    };
-
     while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
         kill(-shell_pgid, SIGTTIN);
 
@@ -374,7 +405,7 @@ int main(int argc, char **argv)
     signal(SIGSTOP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
     signal(SIGTTOU, SIG_IGN);
-    signal(SIGCHLD, SIG_IGN);
+    signal(SIGCHLD, child_handler);
 
     shell_pgid = getpid();
     setpgid(shell_pgid, shell_pgid);
@@ -472,8 +503,11 @@ int main(int argc, char **argv)
                         tcsetpgrp(shell_terminal, shell_pgid);
                         if (WIFSTOPPED(status) && !WIFEXITED(status))
                         {
+                            printf("here");
                             process_stack.top++;
+                            process_stack.size++;
                             process_stack.arr[process_stack.top] = pid;
+                            process_stack.status[process_stack.top] = STOPPED;
                             strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                         }
                         tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
@@ -503,7 +537,9 @@ int main(int argc, char **argv)
                     if (WIFSTOPPED(status) && !WIFEXITED(status))
                     {
                         process_stack.top++;
+                        process_stack.size++;
                         process_stack.arr[process_stack.top] = pid;
+                        process_stack.status[process_stack.top] = STOPPED;
                         strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                     }
                     tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
