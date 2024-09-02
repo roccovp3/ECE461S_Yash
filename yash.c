@@ -122,10 +122,11 @@ void child_handler()
         i++;
     }
     if (WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && (pid > 0))
-        ;
     {
         // printf("%d\n", i);
         process_stack.status[i] = DONE;
+        printf("\n[%d]%c %s\t%s\n", pid, '+', "Done",
+        (process_stack.user_str[i]));
     }
 }
 
@@ -558,6 +559,7 @@ int main(int argc, char **argv)
                     {
                         if (kill(pid, SIGCONT) < 0)
                             perror("kill (SIGCONT)");
+                        tcsetpgrp(shell_terminal, shell_pgid);
                         process_stack.top++;
                         process_stack.size++;
                         process_stack.arr[process_stack.top] = pid;
