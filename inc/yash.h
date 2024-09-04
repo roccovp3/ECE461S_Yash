@@ -31,6 +31,7 @@ typedef struct
     pid_t arr[PROCESS_STACK_DEPTH]; // if you have more than 1000 processes in the background im sorry...
     char user_str[PROCESS_STACK_DEPTH][MAX_INPUT_SIZE];
     status_t status[PROCESS_STACK_DEPTH];
+    int job_id[PROCESS_STACK_DEPTH];
     int size;
     int top;
 } process_stack_t;

@@ -10,12 +10,33 @@ process_stack_t process_stack = {
     .status = {0},
     .user_str = {{0}},
     .size = 0,
+    .job_id = {-1},
 };
 
 int at_prompt = 0;
+int top_process_i = -1;
 int shell_terminal;
 pid_t shell_pgid;
 struct termios shell_tmodes;
+char done_to_print[MAX_INPUT_SIZE * MAX_INPUT_SIZE]; // really shouldnt need to be bigger than this...
+
+int max(int arr[], int n)
+{
+    int max = arr[0];
+    for (int i = 1; i < n; i++)
+    {
+        if (arr[i] > max)
+        {
+            max = arr[i];
+        }
+    }
+    return max;
+}
+
+int assign_job_id()
+{
+    return 1 + max(process_stack.job_id, PROCESS_STACK_DEPTH);
+}
 
 pid_t get_shell_pgid()
 {
@@ -37,6 +58,18 @@ void set_token(char *token, int i)
     strncpy(TOKENS[i], token, MAX_TOKEN_SIZE);
 }
 
+static int get_top_process()
+{
+    int process_stack_i = process_stack.size - 1;
+    if (process_stack_i == -1)
+        return 1;
+    while (process_stack.arr[process_stack_i] <= 0)
+    {
+        process_stack_i--;
+    }
+    return process_stack_i;
+}
+
 void child_handler()
 {
     int status;
@@ -53,10 +86,31 @@ void child_handler()
     {
         i++;
     }
-    if (WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && (pid > 0))
+    if (WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && (pid > 0) && !(WEXITSTATUS(status) == EXIT_FAILURE))
     {
         process_stack.status[i] = DONE;
-        printf("\n[%d]%c %s\t%s\n", pid, '-', "Done", (process_stack.user_str[i]));
+        if (get_top_process() == i)
+        {
+            sprintf(done_to_print + strlen(done_to_print), "[%d]%c %s\t%s\n", process_stack.job_id[i], '+', "Done",
+                    (process_stack.user_str[i]));
+        }
+        else
+        {
+            sprintf(done_to_print + strlen(done_to_print), "[%d]%c %s\t%s\n", process_stack.job_id[i], '-', "Done",
+                    (process_stack.user_str[i]));
+        }
+
+        process_stack.arr[i] = -1;
+        process_stack.job_id[i] = -1;
+        process_stack.status[i] = NONE;
+    }
+    if (WEXITSTATUS(status) == EXIT_FAILURE)
+    {
+        // if process fails to execute, remove it from jobs immediately
+        int process_stack_i = process_stack.size - 1;
+        process_stack.arr[process_stack_i] = -1;
+        process_stack.job_id[process_stack_i] = -1;
+        process_stack.status[process_stack_i] = NONE;
     }
 }
 
@@ -119,6 +173,7 @@ int main(int argc, char **argv)
 
     for (;;)
     {
+
         int jsaved_stdin = STDIN_FILENO;
         int jsaved_stdout = STDOUT_FILENO;
         int jsaved_stderr = STDERR_FILENO;
@@ -148,6 +203,8 @@ int main(int argc, char **argv)
         fflush(stdout);
         at_prompt = 1;
         user_str = readline("# ");
+        printf("%s", done_to_print);
+        done_to_print[0] = 0;
         if (user_str == NULL)
         {
             // Ctrl-D (EOF) encountered
@@ -212,6 +269,7 @@ int main(int argc, char **argv)
                             process_stack.top++;
                             process_stack.size++;
                             process_stack.arr[process_stack.top] = pid;
+                            process_stack.job_id[process_stack.top] = assign_job_id();
                             process_stack.status[process_stack.top] = STOPPED;
                             strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                         }
@@ -244,6 +302,7 @@ int main(int argc, char **argv)
                         process_stack.top++;
                         process_stack.size++;
                         process_stack.arr[process_stack.top] = pid;
+                        process_stack.job_id[process_stack.top] = assign_job_id();
                         process_stack.status[process_stack.top] = RUNNING;
                         strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                     }
@@ -257,6 +316,7 @@ int main(int argc, char **argv)
                             process_stack.top++;
                             process_stack.size++;
                             process_stack.arr[process_stack.top] = pid;
+                            process_stack.job_id[process_stack.top] = assign_job_id();
                             process_stack.status[process_stack.top] = STOPPED;
                             strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                         }
