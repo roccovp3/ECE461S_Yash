@@ -254,7 +254,14 @@ int main(int argc, char **argv)
                     {
                         close(my_pipe[1]);
                         dup2(my_pipe[0], STDIN_FILENO);
-                        spawn_process(jprog_argv, pid, my_pipe[0], jsaved_stdout, jsaved_stderr, 1);
+                        if(jsaved_stdin == STDIN_FILENO)
+                        {
+                            spawn_process(jprog_argv, pid, my_pipe[0], jsaved_stdout, jsaved_stderr, 1);
+                        }
+                        else
+                        {
+                            spawn_process(jprog_argv, pid, jsaved_stdin, jsaved_stdout, jsaved_stderr, 1);
+                        }
                     }
                     else
                     {
