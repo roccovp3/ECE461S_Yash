@@ -27,7 +27,7 @@ int parse_user_input(char *user_str, int *num_tok_before_pipe, int *bg)
             *bg = 1;
         }
 
-        if (pipe_found && bg)
+        if (pipe_found && *bg)
         {
             printf("YASH does not support | and & in the same command\n");
             return 1;
