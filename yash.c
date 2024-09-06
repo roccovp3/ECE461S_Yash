@@ -244,7 +244,15 @@ int main(int argc, char **argv)
                     // k child
                     close(my_pipe[0]);
                     dup2(my_pipe[1], STDOUT_FILENO);
-                    spawn_process(kprog_argv, pid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
+                    if(jsaved_stdin == STDOUT_FILENO)
+                    {
+                        spawn_process(kprog_argv, pid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
+                    }
+                    else
+                    {
+                        spawn_process(kprog_argv, pid, ksaved_stdin, ksaved_stdout, ksaved_stderr, 1);
+                    }
+
                 }
                 else
                 {
