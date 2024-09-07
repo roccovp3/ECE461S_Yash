@@ -18,7 +18,7 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             // this check is separate and before the other to ensure no out of bounds access.
             if (j + 1 == num_tok)
             {
-                printf("YASH: Missing filename for \"<\"\n");
+                printf("yash: Missing filename for \"<\"\n");
                 user_input_valid = 0;
                 break;
             }
@@ -26,19 +26,19 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             {
                 if (access(get_token(j + 1), F_OK) == 0)
                 {
-                    *psaved_stdin = open(get_token(j + 1), O_RDWR, 0666);
+                    *psaved_stdin = open(get_token(j + 1), O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
                     j++; // skip next token, we already know it should be the filename
                 }
                 else
                 {
-                    printf("YASH: STDIN file \"%s\" does not exist\n", get_token(j + 1));
+                    printf("yash: %s: No such file or directory\n", get_token(j + 1));
                     user_input_valid = 0;
                     break;
                 }
             }
             else
             {
-                printf("YASH: Missing filename for \"<\"\n");
+                printf("yash: Missing filename for \"<\"\n");
                 user_input_valid = 0;
                 break;
             }
@@ -48,18 +48,18 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             // this check is separate and before the other to ensure no out of bounds access.
             if (j + 1 == num_tok)
             {
-                printf("YASH: Missing filename for \">\"\n");
+                printf("yash: Missing filename for \">\"\n");
                 user_input_valid = 0;
                 break;
             }
             if (get_token(j + 1) != NULL)
             {
-                *psaved_stdout = open(get_token(j + 1), O_RDWR | O_CREAT, 0666);
+                *psaved_stdout = open(get_token(j + 1), O_RDWR | O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
                 j++; // skip next token, we already know it should be the filename
             }
             else
             {
-                printf("YASH: Missing filename for \">\"\n");
+                printf("yash: Missing filename for \">\"\n");
                 user_input_valid = 0;
                 break;
             }
@@ -69,18 +69,18 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             // this check is separate and before the other to ensure no out of bounds access.
             if (j + 1 == num_tok)
             {
-                printf("YASH: Missing filename for \"2>\"\n");
+                printf("yash: Missing filename for \"2>\"\n");
                 user_input_valid = 0;
                 break;
             }
             if (get_token(j + 1) != NULL)
             {
-                *psaved_stderr = open(get_token(j + 1), O_RDWR | O_CREAT, 0666);
+                *psaved_stderr = open(get_token(j + 1), O_RDWR | O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
                 j++; // skip next token, we already know it should be the filename
             }
             else
             {
-                printf("YASH: Missing filename for \"2>\"\n");
+                printf("yash: Missing filename for \"2>\"\n");
                 user_input_valid = 0;
                 break;
             }
@@ -89,7 +89,7 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
         {
             if (strcmp(get_token(j + 1), ""))
             {
-                printf("YASH: & must be at end of command\n");
+                printf("yash: & must be at end of command\n");
                 printf("[%s]", get_token(j + 1));
                 user_input_valid = 0;
             }

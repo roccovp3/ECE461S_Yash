@@ -2,6 +2,8 @@
 #include <parser.h>
 #include <yash.h>
 
+extern char** environ;
+
 char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
 process_stack_t process_stack = {
@@ -146,8 +148,8 @@ static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int
         dup2(errfile, STDERR_FILENO);
         close(errfile);
     }
-    execvp(argv[0], argv);
-    perror("YASH: Failed to execute process\n");
+    execvpe(argv[0], argv, environ);
+    perror("yash: Failed to execute process\n");
     exit(1);
 }
 
@@ -294,7 +296,7 @@ int main(int argc, char **argv)
             }
             else
             {
-                printf("YASH: Invalid input");
+                printf("yash: Invalid input\n");
             }
         }
         else
@@ -341,7 +343,7 @@ int main(int argc, char **argv)
             }
             else
             {
-                printf("YASH: Invalid input");
+                printf("yash: Invalid input\n");
             }
         }
         free(user_str);

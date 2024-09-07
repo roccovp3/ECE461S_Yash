@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g -Iinc
-LDFLAGS = -lreadline
+LDFLAGS = -lreadline -lc
 
 SRCS = $(wildcard *.c)
 OBJS = $(SRCS:.c=.o)
