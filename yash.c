@@ -80,7 +80,7 @@ void child_handler()
     do
     {
         errno = 0;
-        pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED);
+        pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED|WCONTINUED);
     } while (pid <= 0 && errno == EINTR);
 
     int i = 0;
@@ -109,10 +109,9 @@ void child_handler()
     if (WEXITSTATUS(status) == EXIT_FAILURE)
     {
         // if process fails to execute, remove it from jobs immediately
-        int process_stack_i = process_stack.size - 1;
-        process_stack.arr[process_stack_i] = -1;
-        process_stack.job_id[process_stack_i] = -1;
-        process_stack.status[process_stack_i] = NONE;
+        process_stack.arr[i] = -1;
+        process_stack.job_id[i] = -1;
+        process_stack.status[i] = NONE;
     }
 }
 
@@ -240,63 +239,52 @@ int main(int argc, char **argv)
             if (user_input_valid)
             {
                 pipe(my_pipe);
-                pid_t pid = fork();
-                if (pid == (pid_t)0)
+                pid_t lpid = fork();
+                if (lpid == (pid_t)0)
                 {
                     // k child
                     close(my_pipe[0]);
                     dup2(my_pipe[1], STDOUT_FILENO);
                     if(jsaved_stdin == STDOUT_FILENO)
                     {
-                        spawn_process(kprog_argv, pid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
+                        spawn_process(kprog_argv, lpid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
                     }
                     else
                     {
-                        spawn_process(kprog_argv, pid, ksaved_stdin, ksaved_stdout, ksaved_stderr, 1);
+                        spawn_process(kprog_argv, lpid, ksaved_stdin, ksaved_stdout, ksaved_stderr, 1);
                     }
-
                 }
-                else
+                // parent, spawning j child
+                pid_t rpid = fork();
+                if (rpid == (pid_t)0)
                 {
-                    // parent, spawning j child
-                    pid_t pid = fork();
-                    if (pid == (pid_t)0)
+                    close(my_pipe[1]);
+                    dup2(my_pipe[0], STDIN_FILENO);
+                    if(jsaved_stdin == STDIN_FILENO)
                     {
-                        close(my_pipe[1]);
-                        dup2(my_pipe[0], STDIN_FILENO);
-                        if(jsaved_stdin == STDIN_FILENO)
-                        {
-                            spawn_process(jprog_argv, pid, my_pipe[0], jsaved_stdout, jsaved_stderr, 1);
-                        }
-                        else
-                        {
-                            spawn_process(jprog_argv, pid, jsaved_stdin, jsaved_stdout, jsaved_stderr, 1);
-                        }
+                        spawn_process(jprog_argv, lpid, my_pipe[0], jsaved_stdout, jsaved_stderr, 1);
                     }
                     else
                     {
-                        // parent
-                        close(my_pipe[0]);
-                        close(my_pipe[1]);
-                        tcsetpgrp(shell_terminal, pid);
-                        waitpid(pid, &status, WUNTRACED);
-                        tcsetpgrp(shell_terminal, shell_pgid);
-                        if (WIFSTOPPED(status) && !WIFEXITED(status))
-                        {
-                            process_stack.top++;
-                            process_stack.size++;
-                            process_stack.arr[process_stack.top] = pid;
-                            process_stack.job_id[process_stack.top] = assign_job_id();
-                            process_stack.status[process_stack.top] = STOPPED;
-                            strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
-                        }
-                        tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
+                        spawn_process(jprog_argv, lpid, jsaved_stdin, jsaved_stdout, jsaved_stderr, 1);
                     }
                 }
-            }
-            else
-            {
-                printf("yash: Invalid input\n");
+                // parent
+                close(my_pipe[0]);
+                close(my_pipe[1]);
+                tcsetpgrp(shell_terminal, lpid);
+                waitpid(-lpid, &status, WUNTRACED|WCONTINUED);
+                tcsetpgrp(shell_terminal, shell_pgid);
+                if (WIFSTOPPED(status) && !WIFEXITED(status))
+                {
+                    process_stack.top++;
+                    process_stack.size++;
+                    process_stack.arr[process_stack.top] = lpid;
+                    process_stack.job_id[process_stack.top] = assign_job_id();
+                    process_stack.status[process_stack.top] = STOPPED;
+                    strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
+                }
+                tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
             }
         }
         else
@@ -326,7 +314,7 @@ int main(int argc, char **argv)
                     else
                     {
                         tcsetpgrp(shell_terminal, pid);
-                        waitpid(pid, &status, WUNTRACED);
+                        waitpid(pid, &status, WUNTRACED|WCONTINUED);
                         tcsetpgrp(shell_terminal, shell_pgid);
                         if (WIFSTOPPED(status) && !WIFEXITED(status))
                         {
