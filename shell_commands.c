@@ -10,7 +10,6 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         int pprocess_stack_i = pprocess_stack->size - 1;
         if ((pprocess_stack_i) < 0)
         {
-            printf("early return 1\n");
             return 1;
         }
         while ((pprocess_stack->arr[pprocess_stack_i] < 0))
@@ -18,7 +17,6 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             pprocess_stack_i--;
             if ((pprocess_stack_i) == -1)
             {
-                printf("early return 2\n");
                 return 1;
             }
         }
