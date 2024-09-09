@@ -2,7 +2,7 @@
 #include <parser.h>
 #include <yash.h>
 
-extern char** environ;
+extern char **environ;
 
 char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE] = {0};
 
@@ -77,41 +77,44 @@ void child_handler()
     int status;
     int errno;
     pid_t pid;
-    do
+    while (1)
     {
-        errno = 0;
-        pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED|WCONTINUED);
-    } while (pid <= 0 && errno == EINTR);
+        do
+        {
+            errno = 0;
+            pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED | WCONTINUED);
+        } while (pid <= 0 && errno == EINTR);
 
-    int i = 0;
-    while ((process_stack.arr[i] != pid) && (i < PROCESS_STACK_DEPTH))
-    {
-        i++;
-    }
-    if (WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && (pid > 0) && !(WEXITSTATUS(status) == EXIT_FAILURE))
-    {
-        process_stack.status[i] = DONE;
-        if (get_top_process() == i)
+        if (pid <= 0)
         {
-            sprintf(done_to_print + strlen(done_to_print), "[%d]%c %s\t%s\n", process_stack.job_id[i], '+', "Done",
-                    (process_stack.user_str[i]));
-        }
-        else
-        {
-            sprintf(done_to_print + strlen(done_to_print), "[%d]%c %s\t%s\n", process_stack.job_id[i], '-', "Done",
-                    (process_stack.user_str[i]));
+            return;
         }
 
-        process_stack.arr[i] = -1;
-        process_stack.job_id[i] = -1;
-        process_stack.status[i] = NONE;
-    }
-    if (WEXITSTATUS(status) == EXIT_FAILURE)
-    {
-        // if process fails to execute, remove it from jobs immediately
-        process_stack.arr[i] = -1;
-        process_stack.job_id[i] = -1;
-        process_stack.status[i] = NONE;
+        int i = 0;
+        while ((process_stack.arr[i] != pid) && (i < PROCESS_STACK_DEPTH))
+        {
+            i++;
+        }
+        if (WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && !(WEXITSTATUS(status) == EXIT_FAILURE))
+        {
+            process_stack.status[i] = DONE;
+            if (get_top_process() == i)
+            {
+                sprintf(done_to_print + strlen(done_to_print), "[%d]%c %s\t%s\n", process_stack.job_id[i], '+', "Done",
+                        (process_stack.user_str[i]));
+            }
+            else
+            {
+                sprintf(done_to_print + strlen(done_to_print), "[%d]%c %s\t%s\n", process_stack.job_id[i], '-', "Done",
+                        (process_stack.user_str[i]));
+            }
+        }
+        if ((WIFEXITED(status) || WIFSIGNALED(status)))
+        {
+            process_stack.arr[i] = -1;
+            process_stack.job_id[i] = -1;
+            process_stack.status[i] = NONE;
+        }
     }
 }
 
@@ -226,12 +229,14 @@ int main(int argc, char **argv)
             num_tok++;
         }
 
-        user_input_valid = evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin, &jsaved_stdout,
-                                                   &jsaved_stderr, jprog_argv, &jprog_argc, &process_stack);
+        // &= because parsing needed to be valid and both process need valid input
+        user_input_valid &=
+            evaluate_command_tokens(num_tok_before_pipe, num_tok, num_tok, &jsaved_stdin, &jsaved_stdout,
+                                    &jsaved_stderr, jprog_argv, &jprog_argc, &process_stack);
 
         if ((0 < num_tok_before_pipe) && (num_tok_before_pipe < num_tok))
         {
-            // &= because both process need valid input
+
             user_input_valid &=
                 evaluate_command_tokens(0, num_tok_before_pipe - 1, num_tok_before_pipe - 1, &ksaved_stdin,
                                         &ksaved_stdout, &ksaved_stderr, kprog_argv, &kprog_argc, &process_stack);
@@ -245,7 +250,7 @@ int main(int argc, char **argv)
                     // k child
                     close(my_pipe[0]);
                     dup2(my_pipe[1], STDOUT_FILENO);
-                    if(jsaved_stdin == STDOUT_FILENO)
+                    if (jsaved_stdin == STDOUT_FILENO)
                     {
                         spawn_process(kprog_argv, lpid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
                     }
@@ -260,7 +265,7 @@ int main(int argc, char **argv)
                 {
                     close(my_pipe[1]);
                     dup2(my_pipe[0], STDIN_FILENO);
-                    if(jsaved_stdin == STDIN_FILENO)
+                    if (jsaved_stdin == STDIN_FILENO)
                     {
                         spawn_process(jprog_argv, lpid, my_pipe[0], jsaved_stdout, jsaved_stderr, 1);
                     }
@@ -273,7 +278,7 @@ int main(int argc, char **argv)
                 close(my_pipe[0]);
                 close(my_pipe[1]);
                 tcsetpgrp(shell_terminal, lpid);
-                waitpid(-lpid, &status, WUNTRACED|WCONTINUED);
+                waitpid(-lpid, &status, WUNTRACED | WCONTINUED);
                 tcsetpgrp(shell_terminal, shell_pgid);
                 if (WIFSTOPPED(status) && !WIFEXITED(status))
                 {
@@ -283,6 +288,12 @@ int main(int argc, char **argv)
                     process_stack.job_id[process_stack.top] = assign_job_id();
                     process_stack.status[process_stack.top] = STOPPED;
                     strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
+                }
+                if (WIFEXITED(status))
+                {
+                    process_stack.arr[process_stack.top] = -1;
+                    process_stack.job_id[process_stack.top] = -1;
+                    process_stack.status[process_stack.top] = NONE;
                 }
                 tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
             }
@@ -314,7 +325,7 @@ int main(int argc, char **argv)
                     else
                     {
                         tcsetpgrp(shell_terminal, pid);
-                        waitpid(pid, &status, WUNTRACED|WCONTINUED);
+                        waitpid(pid, &status, WUNTRACED | WCONTINUED);
                         tcsetpgrp(shell_terminal, shell_pgid);
                         if (WIFSTOPPED(status) && !WIFEXITED(status))
                         {
@@ -324,6 +335,12 @@ int main(int argc, char **argv)
                             process_stack.job_id[process_stack.top] = assign_job_id();
                             process_stack.status[process_stack.top] = STOPPED;
                             strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
+                        }
+                        if (WIFEXITED(status))
+                        {
+                            process_stack.arr[process_stack.top] = -1;
+                            process_stack.job_id[process_stack.top] = -1;
+                            process_stack.status[process_stack.top] = NONE;
                         }
                     }
                     tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);

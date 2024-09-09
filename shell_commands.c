@@ -18,7 +18,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             pprocess_stack_i--;
             if ((pprocess_stack_i) == -1)
             {
-                            printf("early return 2\n");
+                printf("early return 2\n");
                 return 1;
             }
         }
@@ -39,9 +39,10 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             {
                 pprocess_stack->status[pprocess_stack_i] = STOPPED;
             }
-            else
+            if(WIFEXITED(status))
             {
                 pprocess_stack->arr[pprocess_stack_i] = -1;
+                pprocess_stack->job_id[pprocess_stack_i] = -1;
                 pprocess_stack->status[pprocess_stack_i] = NONE;
             }
             tcsetattr(get_shell_terminal(), TCSADRAIN, &shell_tmodes);
@@ -52,7 +53,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
     else if (!strcmp(TOKENS[0], "bg") && (num_tok == 1))
     {
         int pprocess_stack_i = pprocess_stack->size - 1;
-        if(pprocess_stack_i < 0)
+        if (pprocess_stack_i < 0)
         {
             printf("No stopped process in the background\n");
             return 1;
@@ -82,7 +83,8 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
                 pid_t pid = pprocess_stack->arr[pprocess_stack_i];
                 pprocess_stack->status[pprocess_stack_i] = RUNNING;
                 tcsetpgrp(get_shell_terminal(), pid);
-                printf("[%d]%c %s\t%s\n", pprocess_stack->job_id[pprocess_stack_i], '+', "Running", (pprocess_stack->user_str[pprocess_stack_i]));
+                printf("[%d]%c %s\t%s\n", pprocess_stack->job_id[pprocess_stack_i], '+', "Running",
+                       (pprocess_stack->user_str[pprocess_stack_i]));
                 waitpid(pid, &status, WNOHANG | WUNTRACED | WCONTINUED);
                 tcsetpgrp(get_shell_terminal(), get_shell_pgid());
                 tcsetattr(get_shell_terminal(), TCSADRAIN, &shell_tmodes);

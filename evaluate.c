@@ -26,7 +26,7 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             {
                 if (access(get_token(j + 1), F_OK) == 0)
                 {
-                    *psaved_stdin = open(get_token(j + 1), O_RDWR, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+                    *psaved_stdin = open(get_token(j + 1), O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
                     j++; // skip next token, we already know it should be the filename
                 }
                 else
@@ -54,7 +54,8 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             }
             if (get_token(j + 1) != NULL)
             {
-                *psaved_stdout = open(get_token(j + 1), O_RDWR | O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+                *psaved_stdout =
+                    open(get_token(j + 1), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
                 j++; // skip next token, we already know it should be the filename
             }
             else
@@ -75,7 +76,8 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             }
             if (get_token(j + 1) != NULL)
             {
-                *psaved_stderr = open(get_token(j + 1), O_RDWR | O_CREAT, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH);
+                *psaved_stderr =
+                    open(get_token(j + 1), O_RDWR | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
                 j++; // skip next token, we already know it should be the filename
             }
             else
