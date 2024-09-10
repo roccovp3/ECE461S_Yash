@@ -45,4 +45,6 @@ char* get_token(int i);
 
 void set_token(char* token, int i);
 
+void remove_from_stack(pid_t pid);
+
 #endif

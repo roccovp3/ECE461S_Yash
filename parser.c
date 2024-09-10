@@ -5,6 +5,7 @@ extern char TOKENS[MAX_INPUT_SIZE][MAX_TOKEN_SIZE];
 int parse_user_input(char *user_str, int *num_tok_before_pipe, int *bg)
 {
     char *token;
+    *num_tok_before_pipe = 0;
     *bg = 0;
 
     token = strtok(user_str, " ");
@@ -15,6 +16,10 @@ int parse_user_input(char *user_str, int *num_tok_before_pipe, int *bg)
     {
         if (!strcmp(token, "|"))
         {
+            if(i == 0)
+            {
+                return 1;
+            }
             pipe_found = 1;
             (*num_tok_before_pipe)++;
         }
@@ -24,12 +29,16 @@ int parse_user_input(char *user_str, int *num_tok_before_pipe, int *bg)
         }
         if (!strcmp(token, "&"))
         {
+            if(i == 0)
+            {
+                return 1;
+            }
             *bg = 1;
         }
 
         if (pipe_found && *bg)
         {
-            printf("YASH does not support | and & in the same command\n");
+            printf("yash: | and & in the same command not supported\n");
             return 1;
         }
 

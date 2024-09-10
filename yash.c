@@ -11,7 +11,7 @@ process_stack_t process_stack = {
     .arr = {-1},
     .status = {0},
     .user_str = {{0}},
-    .size = 0,
+    .size = PROCESS_STACK_DEPTH,
     .job_id = {-1},
 };
 
@@ -72,6 +72,18 @@ static int get_top_process()
     return process_stack_i;
 }
 
+void remove_from_stack(pid_t pid)
+{
+    int i = 0;
+    while ((process_stack.arr[i] != pid) && (i < PROCESS_STACK_DEPTH))
+    {
+        i++;
+    }
+    process_stack.arr[i] = -1;
+    process_stack.job_id[i] = -1;
+    process_stack.status[i] = NONE;
+}
+
 void child_handler()
 {
     int status;
@@ -111,6 +123,7 @@ void child_handler()
         }
         if ((WIFEXITED(status) || WIFSIGNALED(status)))
         {
+            printf("i: %d\n", i);
             process_stack.arr[i] = -1;
             process_stack.job_id[i] = -1;
             process_stack.status[i] = NONE;
@@ -283,7 +296,6 @@ int main(int argc, char **argv)
                 if (WIFSTOPPED(status) && !WIFEXITED(status))
                 {
                     process_stack.top++;
-                    process_stack.size++;
                     process_stack.arr[process_stack.top] = lpid;
                     process_stack.job_id[process_stack.top] = assign_job_id();
                     process_stack.status[process_stack.top] = STOPPED;
@@ -291,9 +303,7 @@ int main(int argc, char **argv)
                 }
                 if (WIFEXITED(status))
                 {
-                    process_stack.arr[process_stack.top] = -1;
-                    process_stack.job_id[process_stack.top] = -1;
-                    process_stack.status[process_stack.top] = NONE;
+                    remove_from_stack(lpid);
                 }
                 tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
             }
@@ -316,7 +326,6 @@ int main(int argc, char **argv)
                             perror("kill (SIGCONT)");
                         tcsetpgrp(shell_terminal, shell_pgid);
                         process_stack.top++;
-                        process_stack.size++;
                         process_stack.arr[process_stack.top] = pid;
                         process_stack.job_id[process_stack.top] = assign_job_id();
                         process_stack.status[process_stack.top] = RUNNING;
@@ -330,17 +339,10 @@ int main(int argc, char **argv)
                         if (WIFSTOPPED(status) && !WIFEXITED(status))
                         {
                             process_stack.top++;
-                            process_stack.size++;
                             process_stack.arr[process_stack.top] = pid;
                             process_stack.job_id[process_stack.top] = assign_job_id();
                             process_stack.status[process_stack.top] = STOPPED;
                             strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
-                        }
-                        if (WIFEXITED(status))
-                        {
-                            process_stack.arr[process_stack.top] = -1;
-                            process_stack.job_id[process_stack.top] = -1;
-                            process_stack.status[process_stack.top] = NONE;
                         }
                     }
                     tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);

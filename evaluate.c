@@ -22,6 +22,11 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
                 user_input_valid = 0;
                 break;
             }
+            if(j == 0)
+            {
+               user_input_valid = 0;
+               break;
+            }
             if (get_token(j + 1) != NULL)
             {
                 if (access(get_token(j + 1), F_OK) == 0)
@@ -52,6 +57,11 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
                 user_input_valid = 0;
                 break;
             }
+            if(j == 0)
+            {
+               user_input_valid = 0;
+               break;
+            }
             if (get_token(j + 1) != NULL)
             {
                 *psaved_stdout =
@@ -73,6 +83,11 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
                 printf("yash: Missing filename for \"2>\"\n");
                 user_input_valid = 0;
                 break;
+            }
+            if(j == 0)
+            {
+               user_input_valid = 0; 
+               break;
             }
             if (get_token(j + 1) != NULL)
             {

@@ -10,43 +10,41 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         int pprocess_stack_i = pprocess_stack->size - 1;
         if ((pprocess_stack_i) < 0)
         {
+            printf("early1\n");
             return 1;
         }
-        while ((pprocess_stack->arr[pprocess_stack_i] < 0))
+        while ((pprocess_stack->arr[pprocess_stack_i] <= 0))
         {
             pprocess_stack_i--;
             if ((pprocess_stack_i) == -1)
             {
+                printf("early2\n");
                 return 1;
             }
         }
 
-        if (1)
+        kill((pprocess_stack->arr)[pprocess_stack_i], SIGCONT);
+        struct termios shell_tmodes;
+        int status;
+
+        tcgetattr(get_shell_terminal(), &shell_tmodes);
+        tcsetpgrp(get_shell_terminal(), pprocess_stack->arr[pprocess_stack_i]);
+        printf("%s\n", (pprocess_stack->user_str[pprocess_stack_i]));
+        pprocess_stack->status[pprocess_stack_i] = RUNNING;
+        waitpid(-pprocess_stack->arr[pprocess_stack_i], &status, WUNTRACED);
+        tcsetpgrp(get_shell_terminal(), get_shell_pgid());
+        if (WIFSTOPPED(status) && !WIFEXITED(status))
         {
-            kill((pprocess_stack->arr)[pprocess_stack_i], SIGCONT);
-            struct termios shell_tmodes;
-            int status;
-
-            tcgetattr(get_shell_terminal(), &shell_tmodes);
-            tcsetpgrp(get_shell_terminal(), pprocess_stack->arr[pprocess_stack_i]);
-            printf("%s\n", (pprocess_stack->user_str[pprocess_stack_i]));
-            pprocess_stack->status[pprocess_stack_i] = RUNNING;
-            waitpid(-pprocess_stack->arr[pprocess_stack_i], &status, WUNTRACED);
-            tcsetpgrp(get_shell_terminal(), get_shell_pgid());
-            if (WIFSTOPPED(status) && !WIFEXITED(status))
-            {
-                pprocess_stack->status[pprocess_stack_i] = STOPPED;
-            }
-            if(WIFEXITED(status))
-            {
-                pprocess_stack->arr[pprocess_stack_i] = -1;
-                pprocess_stack->job_id[pprocess_stack_i] = -1;
-                pprocess_stack->status[pprocess_stack_i] = NONE;
-            }
-            tcsetattr(get_shell_terminal(), TCSADRAIN, &shell_tmodes);
-
-            return 1;
+            pprocess_stack->status[pprocess_stack_i] = STOPPED;
         }
+        if(WIFEXITED(status))
+        {
+            pprocess_stack->arr[pprocess_stack_i] = -1;
+            pprocess_stack->job_id[pprocess_stack_i] = -1;
+            pprocess_stack->status[pprocess_stack_i] = NONE;
+        }
+        tcsetattr(get_shell_terminal(), TCSADRAIN, &shell_tmodes);
+        return 1;
     }
     else if (!strcmp(TOKENS[0], "bg") && (num_tok == 1))
     {
