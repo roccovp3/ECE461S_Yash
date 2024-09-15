@@ -15,7 +15,6 @@ process_stack_t process_stack = {
     .job_id = {-1},
 };
 
-int at_prompt = 0;
 int top_process_i = -1;
 int shell_terminal;
 pid_t shell_pgid;
@@ -89,6 +88,7 @@ void child_handler()
     int status;
     int errno;
     pid_t pid;
+    //printf("here\n");
     while (1)
     {
         do
@@ -96,7 +96,7 @@ void child_handler()
             errno = 0;
             pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED | WCONTINUED);
         } while (pid <= 0 && errno == EINTR);
-
+        //printf("status: %i\n", status);
         if (pid <= 0)
         {
             return;
@@ -121,13 +121,29 @@ void child_handler()
                         (process_stack.user_str[i]));
             }
         }
-        if ((WIFEXITED(status) || WIFSIGNALED(status)))
+        if (WIFEXITED(status) || WIFSIGNALED(status) || WIFSTOPPED(status))
         {
+            //printf("here2\n");
             process_stack.arr[i] = -1;
             process_stack.job_id[i] = -1;
             process_stack.status[i] = NONE;
         }
     }
+}
+
+void interrupt_handler(int signum)
+{
+    printf("ctrl c\n");
+    pid_t pid = getpid();
+
+    int i = 0;
+    while ((process_stack.arr[i] != pid) && (i < PROCESS_STACK_DEPTH))
+    {
+        i++;
+    }
+    process_stack.arr[i] = -1;
+    process_stack.job_id[i] = -1;
+    process_stack.status[i] = NONE;
 }
 
 static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
@@ -139,7 +155,7 @@ static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int
     if (fg)
         tcsetpgrp(shell_terminal, pgid);
 
-    signal(SIGINT, SIG_DFL);
+    signal(SIGINT, interrupt_handler);
     signal(SIGQUIT, SIG_DFL);
     signal(SIGTSTP, SIG_DFL);
     signal(SIGSTOP, SIG_DFL);
@@ -163,7 +179,7 @@ static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int
         close(errfile);
     }
     execvpe(argv[0], argv, environ);
-    perror("yash: Failed to execute process\n");
+    //perror("yash: Failed to execute process\n"); //in project instructions, dont want an error msg here
     exit(1);
 }
 
@@ -217,7 +233,6 @@ int main(int argc, char **argv)
         int num_tok_before_pipe = 0;
 
         fflush(stdout);
-        at_prompt = 1;
         user_str = readline("# ");
         printf("%s", done_to_print);
         done_to_print[0] = 0;
@@ -226,7 +241,6 @@ int main(int argc, char **argv)
             // Ctrl-D (EOF) encountered
             exit(0);
         }
-        at_prompt = 0;
 
         char user_str_deep_copy[MAX_INPUT_SIZE];
         strncpy(user_str_deep_copy, user_str, MAX_INPUT_SIZE);
@@ -322,7 +336,7 @@ int main(int argc, char **argv)
                     if (bg)
                     {
                         if (kill(pid, SIGCONT) < 0)
-                            perror("kill (SIGCONT)");
+                            //perror("kill (SIGCONT)"); //yash docs dont want error msgs
                         tcsetpgrp(shell_terminal, shell_pgid);
                         process_stack.top++;
                         process_stack.arr[process_stack.top] = pid;
@@ -349,7 +363,7 @@ int main(int argc, char **argv)
             }
             else
             {
-                printf("yash: Invalid input\n");
+                //printf("yash: Invalid input\n"); //yash project instructions dont want this error msg
             }
         }
         free(user_str);
