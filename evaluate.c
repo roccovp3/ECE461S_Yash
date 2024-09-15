@@ -107,7 +107,6 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
             if (strcmp(get_token(j + 1), ""))
             {
                 printf("yash: & must be at end of command\n");
-                printf("[%s]", get_token(j + 1));
                 user_input_valid = 0;
             }
             break;

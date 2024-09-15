@@ -123,7 +123,6 @@ void child_handler()
         }
         if ((WIFEXITED(status) || WIFSIGNALED(status)))
         {
-            printf("i: %d\n", i);
             process_stack.arr[i] = -1;
             process_stack.job_id[i] = -1;
             process_stack.status[i] = NONE;
