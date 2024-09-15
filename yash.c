@@ -105,6 +105,11 @@ void child_handler()
         {
             i++;
         }
+        if(i == PROCESS_STACK_DEPTH)
+        {
+            //could be here because of error, or the right child of a | process exited
+            return;
+        }
         if (WIFEXITED(status) && (i != PROCESS_STACK_DEPTH) && !(WEXITSTATUS(status) == EXIT_FAILURE))
         {
             process_stack.status[i] = DONE;
@@ -169,6 +174,9 @@ int main(int argc, char **argv)
 {
     char *user_str;
 
+    int stdin_copy = dup(STDIN_FILENO);
+    int stdout_copy = dup(STDOUT_FILENO);
+
     while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
         kill(-shell_pgid, SIGTTIN);
 
@@ -187,6 +195,8 @@ int main(int argc, char **argv)
 
     for (;;)
     {
+        dup2(stdin_copy, 0);
+        dup2(stdout_copy, 1);
 
         int jsaved_stdin = STDIN_FILENO;
         int jsaved_stdout = STDOUT_FILENO;
@@ -223,6 +233,11 @@ int main(int argc, char **argv)
             // Ctrl-D (EOF) encountered
             exit(0);
         }
+        else if(user_str[0] == 0)
+        {
+            free(user_str);
+            continue;
+        }
 
         char user_str_deep_copy[MAX_INPUT_SIZE];
         strncpy(user_str_deep_copy, user_str, MAX_INPUT_SIZE);
@@ -258,7 +273,7 @@ int main(int argc, char **argv)
                     // k child
                     close(my_pipe[0]);
                     dup2(my_pipe[1], STDOUT_FILENO);
-                    if (jsaved_stdin == STDOUT_FILENO)
+                    if (ksaved_stdout == STDOUT_FILENO)
                     {
                         spawn_process(kprog_argv, lpid, ksaved_stdin, my_pipe[1], ksaved_stderr, 1);
                     }
@@ -283,22 +298,19 @@ int main(int argc, char **argv)
                     }
                 }
                 // parent
+                close(my_pipe[0]);
+                close(my_pipe[1]);
                 tcsetpgrp(shell_terminal, lpid);
-                waitpid(-lpid, &status, 0);
+                waitpid(-lpid, &status, WUNTRACED | WCONTINUED);
                 tcsetpgrp(shell_terminal, shell_pgid);
-                // Do not have to support pipelined commands getting put into background
-                // if (WIFSTOPPED(status) && !WIFEXITED(status))
-                // {
-                //     process_stack.top++;
-                //     process_stack.arr[process_stack.top] = lpid;
-                //     process_stack.job_id[process_stack.top] = assign_job_id();
-                //     process_stack.status[process_stack.top] = STOPPED;
-                //     strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
-                // }
-                // else
-                // {
-                //     remove_from_stack(lpid);
-                // }
+                if (WIFSTOPPED(status) && !WIFEXITED(status))
+                {
+                    process_stack.top++;
+                    process_stack.arr[process_stack.top] = lpid;
+                    process_stack.job_id[process_stack.top] = assign_job_id();
+                    process_stack.status[process_stack.top] = STOPPED;
+                    strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
+                }
                 tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
             }
         }
@@ -317,8 +329,8 @@ int main(int argc, char **argv)
                     if (bg)
                     {
                         if (kill(pid, SIGCONT) < 0)
-                            // perror("kill (SIGCONT)"); //yash docs dont want error msgs
-                            tcsetpgrp(shell_terminal, shell_pgid);
+                            perror("kill (SIGCONT)"); //yash docs dont want error msgs
+                        tcsetpgrp(shell_terminal, shell_pgid);
                         process_stack.top++;
                         process_stack.arr[process_stack.top] = pid;
                         process_stack.job_id[process_stack.top] = assign_job_id();
