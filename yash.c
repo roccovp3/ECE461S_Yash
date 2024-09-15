@@ -88,7 +88,6 @@ void child_handler()
     int status;
     int errno;
     pid_t pid;
-    //printf("here\n");
     while (1)
     {
         do
@@ -96,7 +95,6 @@ void child_handler()
             errno = 0;
             pid = waitpid(WAIT_ANY, &status, WNOHANG | WUNTRACED | WCONTINUED);
         } while (pid <= 0 && errno == EINTR);
-        //printf("status: %i\n", status);
         if (pid <= 0)
         {
             return;
@@ -123,27 +121,11 @@ void child_handler()
         }
         if (WIFEXITED(status) || WIFSIGNALED(status) || WIFSTOPPED(status))
         {
-            //printf("here2\n");
             process_stack.arr[i] = -1;
             process_stack.job_id[i] = -1;
             process_stack.status[i] = NONE;
         }
     }
-}
-
-void interrupt_handler(int signum)
-{
-    printf("ctrl c\n");
-    pid_t pid = getpid();
-
-    int i = 0;
-    while ((process_stack.arr[i] != pid) && (i < PROCESS_STACK_DEPTH))
-    {
-        i++;
-    }
-    process_stack.arr[i] = -1;
-    process_stack.job_id[i] = -1;
-    process_stack.status[i] = NONE;
 }
 
 static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int errfile, int fg)
@@ -155,7 +137,7 @@ static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int
     if (fg)
         tcsetpgrp(shell_terminal, pgid);
 
-    signal(SIGINT, interrupt_handler);
+    signal(SIGINT, SIG_DFL);
     signal(SIGQUIT, SIG_DFL);
     signal(SIGTSTP, SIG_DFL);
     signal(SIGSTOP, SIG_DFL);
@@ -179,7 +161,7 @@ static void spawn_process(char *argv[], pid_t pgid, int infile, int outfile, int
         close(errfile);
     }
     execvpe(argv[0], argv, environ);
-    //perror("yash: Failed to execute process\n"); //in project instructions, dont want an error msg here
+    // perror("yash: Failed to execute process\n"); //in project instructions, dont want an error msg here
     exit(1);
 }
 
@@ -314,7 +296,7 @@ int main(int argc, char **argv)
                     process_stack.status[process_stack.top] = STOPPED;
                     strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
                 }
-                if (WIFEXITED(status))
+                else
                 {
                     remove_from_stack(lpid);
                 }
@@ -336,8 +318,8 @@ int main(int argc, char **argv)
                     if (bg)
                     {
                         if (kill(pid, SIGCONT) < 0)
-                            //perror("kill (SIGCONT)"); //yash docs dont want error msgs
-                        tcsetpgrp(shell_terminal, shell_pgid);
+                            // perror("kill (SIGCONT)"); //yash docs dont want error msgs
+                            tcsetpgrp(shell_terminal, shell_pgid);
                         process_stack.top++;
                         process_stack.arr[process_stack.top] = pid;
                         process_stack.job_id[process_stack.top] = assign_job_id();
@@ -363,7 +345,7 @@ int main(int argc, char **argv)
             }
             else
             {
-                //printf("yash: Invalid input\n"); //yash project instructions dont want this error msg
+                // printf("yash: Invalid input\n"); //yash project instructions dont want this error msg
             }
         }
         free(user_str);

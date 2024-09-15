@@ -22,10 +22,10 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
                 user_input_valid = 0;
                 break;
             }
-            if(j == 0)
+            if (j == 0)
             {
-               user_input_valid = 0;
-               break;
+                user_input_valid = 0;
+                break;
             }
             if (get_token(j + 1) != NULL)
             {
@@ -57,10 +57,10 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
                 user_input_valid = 0;
                 break;
             }
-            if(j == 0)
+            if (j == 0)
             {
-               user_input_valid = 0;
-               break;
+                user_input_valid = 0;
+                break;
             }
             if (get_token(j + 1) != NULL)
             {
@@ -84,10 +84,10 @@ int evaluate_command_tokens(int start_global_tokens_index, int stop_global_token
                 user_input_valid = 0;
                 break;
             }
-            if(j == 0)
+            if (j == 0)
             {
-               user_input_valid = 0; 
-               break;
+                user_input_valid = 0;
+                break;
             }
             if (get_token(j + 1) != NULL)
             {

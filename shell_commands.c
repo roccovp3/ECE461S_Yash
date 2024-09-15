@@ -35,7 +35,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         {
             pprocess_stack->status[pprocess_stack_i] = STOPPED;
         }
-        if(WIFEXITED(status))
+        else
         {
             pprocess_stack->arr[pprocess_stack_i] = -1;
             pprocess_stack->job_id[pprocess_stack_i] = -1;
@@ -49,7 +49,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
         int pprocess_stack_i = pprocess_stack->size - 1;
         if (pprocess_stack_i < 0)
         {
-            //printf("No stopped process in the background\n");
+            // printf("No stopped process in the background\n");
             return 1;
         }
         while ((pprocess_stack->status[pprocess_stack_i] != STOPPED))
@@ -57,7 +57,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             pprocess_stack_i--;
             if ((pprocess_stack_i) == -1)
             {
-                //printf("No stopped process in the background\n");
+                // printf("No stopped process in the background\n");
                 return 1;
             }
         }
@@ -66,7 +66,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             // process no longer stopped
             if (((pprocess_stack_i) == -1))
             {
-                //printf("No stopped process in the background\n");
+                // printf("No stopped process in the background\n");
                 return 1;
             }
 
@@ -86,7 +86,7 @@ int shell_builtin_commands(process_stack_t *pprocess_stack, int num_tok)
             }
         }
 
-        //printf("No processes in the background\n");
+        // printf("No processes in the background\n");
         return 1;
     }
     else if (!strcmp(TOKENS[0], "jobs") && (num_tok == 1))

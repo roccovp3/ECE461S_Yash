@@ -16,7 +16,7 @@ int parse_user_input(char *user_str, int *num_tok_before_pipe, int *bg)
     {
         if (!strcmp(token, "|"))
         {
-            if(i == 0)
+            if (i == 0)
             {
                 return 1;
             }
@@ -29,7 +29,7 @@ int parse_user_input(char *user_str, int *num_tok_before_pipe, int *bg)
         }
         if (!strcmp(token, "&"))
         {
-            if(i == 0)
+            if (i == 0)
             {
                 return 1;
             }
