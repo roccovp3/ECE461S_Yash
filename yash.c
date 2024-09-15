@@ -283,23 +283,22 @@ int main(int argc, char **argv)
                     }
                 }
                 // parent
-                close(my_pipe[0]);
-                close(my_pipe[1]);
                 tcsetpgrp(shell_terminal, lpid);
-                waitpid(-lpid, &status, WUNTRACED | WCONTINUED);
+                waitpid(-lpid, &status, 0);
                 tcsetpgrp(shell_terminal, shell_pgid);
-                if (WIFSTOPPED(status) && !WIFEXITED(status))
-                {
-                    process_stack.top++;
-                    process_stack.arr[process_stack.top] = lpid;
-                    process_stack.job_id[process_stack.top] = assign_job_id();
-                    process_stack.status[process_stack.top] = STOPPED;
-                    strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
-                }
-                else
-                {
-                    remove_from_stack(lpid);
-                }
+                // Do not have to support pipelined commands getting put into background
+                // if (WIFSTOPPED(status) && !WIFEXITED(status))
+                // {
+                //     process_stack.top++;
+                //     process_stack.arr[process_stack.top] = lpid;
+                //     process_stack.job_id[process_stack.top] = assign_job_id();
+                //     process_stack.status[process_stack.top] = STOPPED;
+                //     strcpy(process_stack.user_str[process_stack.top], user_str_deep_copy);
+                // }
+                // else
+                // {
+                //     remove_from_stack(lpid);
+                // }
                 tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
             }
         }
